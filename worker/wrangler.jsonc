@@ -11,7 +11,7 @@
     // who may sign in: a verified Google account on this Workspace domain, nothing else
     "ALLOWED_DOMAIN": "flapkap.com",
     // the OAuth client (Web) from Google Cloud Console; public, not a secret
-    "GOOGLE_CLIENT_ID": "",
+    "GOOGLE_CLIENT_ID": "415888572696-io6144ke98f5oh3uhn3d65idmakc7clu.apps.googleusercontent.com",
     // where the page is served from; comma-separated, exact origins
     "ALLOWED_ORIGINS": "https://roony-flapkap.github.io,http://localhost:8080,http://127.0.0.1:8080",
     // free plan: 100,000 rows written a day, and D1 stops answering when it runs out.
