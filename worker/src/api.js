@@ -3,7 +3,7 @@
 // HubSpot in bulk and leaves what it read in the SQL copy.
 
 import { hubspotClient, T, KIND_OF } from "./hubspot.js";
-import { ASKFOR, lookups, shapeOf, dCompany, dContact, toRow, recKey } from "./shape.js";
+import { ASKFOR, lookups, shapeRecord, dContact, toRow, recKey } from "./shape.js";
 import { applyRecords, applyLinks, recordChanges, recordsByKey } from "./graph.js";
 import { announce } from "./hub.js";
 import { HttpError } from "./errors.js";
@@ -14,7 +14,7 @@ const typeOk = t => !!KIND_OF[t];
 
 async function keep(env, rows, sets, source){
   const rec = await applyRecords(env, rows, { source });
-  const lnk = sets.length ? await applyLinks(env, sets, { source, emitFor: k => rec.known.has(k) }) : { changes: [] };
+  const lnk = sets.length ? await applyLinks(env, sets, { source }) : { changes: [] };
   const ch = rec.changes.concat(lnk.changes);
   if (ch.length){ const last = await recordChanges(env, ch, source); await announce(env, last, ch); }
   return ch.length;
@@ -92,7 +92,7 @@ export async function expand(env, key, limit = 40){
     sets.push({ from: key, toType: to, to: all.map(x => ({ key: recKey(to, x.id), typeId: x.typeId, label: x.label })) });
     const read = await hs.batchRead(to, all.slice(0, limit).map(x => x.id), ASKFOR[to]);
     rows.push(...read.map(x => toRow(to, x)));
-    out[KIND_OF[to]] = { total: all.length, records: read.map(x => to === T.company ? dCompany(x, L) : shapeOf[to](x, null, null, L)) };
+    out[KIND_OF[to]] = { total: all.length, records: read.map(x => shapeRecord(to, x, L)) };
   }));
   const changes = await keep(env, rows, sets, "expand");
   return { key, found: out, changes, calls: hs.stats.calls };
@@ -108,12 +108,26 @@ export async function recordsFresh(env, keys){
   const records = [], rows = [];
   for (const [t, ids] of byType){
     const read = await hs.batchRead(t, ids, ASKFOR[t]);
-    for (const x of read){ rows.push(toRow(t, x)); records.push(t === T.company ? dCompany(x, L) : shapeOf[t](x, null, null, L)); }
+    for (const x of read){ rows.push(toRow(t, x)); records.push(shapeRecord(t, x, L)); }
   }
   const back = new Set(records.map(r => r.k));
   const missing = keys.filter(k => !back.has(k));
   await keep(env, rows, [], "refresh");
   return { records, missing };
+}
+
+// ---------------------------------------------------------------- tombstones
+// Which of these records the copy knows are gone from HubSpot (deleted, or
+// merged into another), so a canvas can show it after a reload too.
+export async function tombstones(env, keys){
+  keys = [...new Set((keys || []).map(String))].filter(k => { const [t, id] = k.split("/"); return typeOk(t) && idOk(id); }).slice(0, 2000);
+  const gone = [];
+  for (let i = 0; i < keys.length; i += 500){
+    const r = await env.GRAPH.prepare("SELECT key, deleted_at, merged_into FROM records WHERE key IN (SELECT value FROM json_each(?1)) AND deleted_at IS NOT NULL")
+      .bind(JSON.stringify(keys.slice(i, i + 500))).all();
+    for (const x of r.results || []) gone.push({ key: x.key, at: x.deleted_at, other: x.merged_into || null });
+  }
+  return { gone };
 }
 
 // ---------------------------------------------------------------- changes

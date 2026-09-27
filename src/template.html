@@ -720,6 +720,62 @@
   /* with animation off the scan bar would just sit at the top of the
      screen as a rule, so it is withdrawn rather than frozen */
   @media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} body::after,.scan,.gspark{display:none} }
+
+  /* ---------- sign-in: the one door before everything else ---------- */
+  html.sgnon{overflow:hidden}
+  .sgnin{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:16px;
+    background:radial-gradient(ellipse at 50% 40%,rgba(41,12,255,.16),rgba(7,7,10,.97) 62%),var(--void)}
+  .sgnbox{width:min(460px,100%);padding:26px 24px 22px;text-align:center;box-shadow:0 0 70px var(--accent-glow)}
+  .sgnk{font-size:9px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+  .sgnbox h2{font-size:15px;font-weight:600;letter-spacing:.34em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+  .sgnl{font-size:11px;line-height:1.6;color:var(--ink-2);letter-spacing:.03em;margin:0 0 18px}
+  .sgnl b{color:var(--ink);font-weight:500}
+  .sgnbtn{display:flex;justify-content:center;min-height:44px}
+  .sgnnote{font-size:10.5px;letter-spacing:.05em;color:var(--amber);margin:14px 0 0;min-height:1.4em}
+
+  /* ---------- who is signed in; changes; the SQL console ---------- */
+  .whochip{gap:7px}
+  .whoout{font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;background:none;color:var(--dim);
+    border:0;border-left:1px solid var(--rule);padding:0 0 0 8px;margin-left:2px;cursor:pointer}
+  .whoout:hover{color:var(--accent)}
+  .chip.chchip.live{border-color:var(--amber-line);color:var(--amber)} .chip.chchip.live i{background:var(--amber);animation:blink 1.1s steps(2) infinite}
+  .chbox{width:min(860px,100%)}
+  .chbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:14px 0 4px}
+  .chlist{max-height:min(56vh,560px);overflow:auto;margin-top:10px}
+  .chrow .cvname{flex-wrap:wrap;gap:4px 6px}
+  .chrow.here{border-left:2px solid var(--accent)}
+  .chgo{font-size:11.5px}
+  .chname{font-size:11.5px;color:var(--ink-2);letter-spacing:.04em}
+  .chsep{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2)}
+  .chk.deleted,.chk.merged,.chk.unlinked{border-color:rgba(255,59,48,.5);color:var(--alert)}
+  .chk.created,.chk.linked,.chk.restored{border-color:var(--green-line);color:var(--green)}
+  .chk.updated{border-color:var(--amber-line);color:var(--amber)}
+  .sqlbox{width:min(1100px,100%)}
+  .sqlex{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:14px 0 8px}
+  .sqlexl{font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:var(--dim-2);margin-right:4px}
+  #sqlq{display:block;width:100%;box-sizing:border-box;resize:vertical;min-height:120px;font-family:var(--mono);font-size:12px;line-height:1.55;
+    letter-spacing:.02em;background:var(--void);color:var(--ink);border:1px solid var(--red-dim);padding:9px 11px;outline:none;tab-size:2}
+  #sqlq:focus{box-shadow:0 0 18px var(--red-glow)}
+  .sqlbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:9px 0 0}
+  .sqlstat{font-size:10px;letter-spacing:.08em;color:var(--dim)}
+  .sqlstat.bad{color:var(--amber)}
+  .sqlres{margin-top:12px;max-height:min(52vh,520px);overflow:auto;border:1px solid var(--rule);background:var(--void)}
+  .sqlres:empty{display:none}
+  .sqlt{border-collapse:collapse;font-size:10.5px;letter-spacing:.02em;width:max-content;min-width:100%}
+  .sqlt th{position:sticky;top:0;background:var(--panel-2);color:var(--accent);font-weight:500;text-align:left;padding:6px 10px;
+    border-bottom:1px solid var(--rule);letter-spacing:.14em;text-transform:uppercase;font-size:9px}
+  .sqlt td{padding:5px 10px;border-bottom:1px solid var(--rule);color:var(--ink-2);white-space:nowrap;max-width:420px;overflow:hidden;text-overflow:ellipsis}
+  .sqlt tr:hover td{background:var(--accent-film)}
+  .sqlt .snull{color:var(--dim-2);font-style:italic}
+  .sqgo{font-family:var(--mono);font-size:10.5px;background:none;border:0;padding:0;color:var(--accent);cursor:pointer;text-decoration:underline dotted}
+  @media (max-width:560px){ .chbar{justify-content:flex-start} }
+
+  /* ---------- what HubSpot changed, drawn on the map ---------- */
+  .gnode.ggone .glabel,.gnode.ggone .gsubl{text-decoration:line-through;fill:var(--alert);opacity:.85}
+  .gnode.ggone > :not(text){opacity:.35}
+  .gedge.egone{stroke:var(--alert)!important;stroke-opacity:.35!important;stroke-dasharray:2 5!important}
+  .gedge.efresh{stroke:var(--green)!important;stroke-opacity:.9!important;stroke-dasharray:6 3!important;
+    filter:drop-shadow(0 0 3px rgba(69,209,124,.6))}
 </style>
 <!-- the phase is stamped before the rest of the body parses, so the console
      never shows for a frame on the way to the gate -->

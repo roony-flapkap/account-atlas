@@ -121,6 +121,12 @@ export function dLead(x, cid, home, L){
               ["Created by", N.maker(p.hs_created_by_user_id)], ["Source", p.hs_lead_source]])
   };
 }
+// A record on its own, with no account around it (no home, not unattached).
+export function shapeRecord(t, x, L){
+  if (t === T.company) return dCompany(x, L);
+  if (t === T.contact) return dContact(x, null, null, false, L);
+  return t === T.deal ? dDeal(x, null, null, L) : dLead(x, null, null, L);
+}
 export const shapeOf = { [T.company]: dCompany, [T.contact]: dContact, [T.deal]: dDeal, [T.lead]: dLead };
 
 // A record from the SQL copy alone (no live read): enough to draw it.

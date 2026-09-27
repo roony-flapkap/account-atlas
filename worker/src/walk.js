@@ -140,7 +140,6 @@ export async function walk(env, cid, say, { user } = {}){
   const rows = [toRow(T.company, co)].concat(rC.map(x => toRow(T.contact, x)), rD.map(x => toRow(T.deal, x)), rL.map(x => toRow(T.lead, x)),
     rFD.map(x => toRow(T.deal, x)), rFC.map(x => toRow(T.company, x)), rS.map(x => toRow(T.contact, x)));
   const rec = await applyRecords(env, rows, { source: "walk", at });
-  const known = k => rec.known.has(k);
   const sets = [
     { from: hubKey, toType: T.contact, to: aC.get(cid).map(x => ({ key: recKey(T.contact, x.id), typeId: x.typeId, label: x.label })) },
     { from: hubKey, toType: T.deal, to: aD.get(cid).map(x => ({ key: recKey(T.deal, x.id), typeId: x.typeId, label: x.label })) },
@@ -153,7 +152,7 @@ export async function walk(env, cid, say, { user } = {}){
     sets.push({ from: ck, toType: T.company, to: (cCo.get(c) || []).map(x => ({ key: recKey(T.company, x.id), typeId: x.typeId, label: x.label })) });
   }
   for (const l of ourL) sets.push({ from: recKey(T.lead, l), toType: T.deal, to: (lD.get(l) || []).map(x => ({ key: recKey(T.deal, x.id), typeId: x.typeId, label: x.label })) });
-  const lnk = await applyLinks(env, sets, { source: "walk", at, emitFor: known });
+  const lnk = await applyLinks(env, sets, { source: "walk", at });
   const changes = rec.changes.concat(lnk.changes);
   const last = await recordChanges(env, changes, "walk", at);
   if (changes.length) await announce(env, last, changes);

@@ -4,20 +4,17 @@
   /* =====================================================================
      1. CONFIG
      ===================================================================== */
-  /*@@TABLES@@*/
   // Which HubSpot account, and who is at the keys: both from the Worker once
   // signed in. The page is public, so it carries neither.
   let PORTAL = "";
   let OPERATOR = "—";
   const REDUCED = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-  // What one walk may spend. 200 is HubSpot's ceiling on a search page; the
-  // rest are API calls against a shared daily quota, and a walk that hits
-  // one says so in its console and on the account's own entry.
-  const CAP = { obj: 200, link: 40, leadDeal: 20, foreign: 16, probe: 5 };
-  // Opening a record out: 3 reads of up to 40 results each, and at most 60
-  // records per press of Expand search · all.
-  const EXPAND = { limit: 40, reads: 3, perPress: 60 };
+  // Opening a record out: one request to the Worker, up to 40 records of
+  // each other kind drawn, and at most 60 records per press of Expand
+  // search · all. (A walk's own limits are the Worker's, and it says when
+  // one is reached.)
+  const EXPAND = { limit: 40, reads: 1, perPress: 60 };
   // a walk older than this reads as a museum piece rather than a picture
   const STALE_MS = 14 * 86400000;
   // A document is capped at 256 KiB; leave headroom for the envelope.
@@ -56,12 +53,8 @@
   const now = () => (window.performance && performance.now) ? performance.now() : Date.now();
   const bytes = s => (window.TextEncoder ? new TextEncoder().encode(s).length : s.length * 3);
 
-  const owner = id => id ? (OWNERS[id] || "owner " + id) : null;
-  const repPlain = id => id ? (GONE[id] || OWNERS[id] || "owner " + id) : null;
-  const maker = id => id ? (USERS[id] || "user " + id) : null;
-  const dealStage = id => (id && STAGES.dealStage[id]) || null;
-  const leadStage = id => (id && STAGES.leadStage[id]) || null;
-  const pipeName = id => (id && STAGES.pipeline[id]) || null;
+  // owner, user and stage names arrive already written on each record: the
+  // Worker reads them from HubSpot, so the page carries no table of people
   const recUrl = (t, id) => "https://app.hubspot.com/contacts/" + PORTAL + "/record/" + t + "/" + id;
   const recKey = (t, id) => t + "/" + id;
   const companyKey = id => recKey("0-2", id);
@@ -86,8 +79,10 @@
   const phoneTail = s => { const d = String(s || "").replace(/[^0-9]/g, ""); return d.length >= 9 ? d.slice(-9) : d; };
 
   /* =====================================================================
-     3. SERVICES — each resolves null when this view cannot run it, and
-     nothing blocks the first paint on any of them.
+     3. SERVICES — the store, the user and downloads come through
+     window.claude.use (see 00-platform.js); HubSpot only through the
+     Worker, which reads it in bulk, keeps its SQL copy, and paces every
+     call itself. Nothing here talks to HubSpot directly.
      ===================================================================== */
   const cap = {};
   function use(name){
@@ -98,66 +93,20 @@
     }
     return cap[name];
   }
-  // Long runs (a segment's batch walk, its mesh) set a gap between calls:
-  // the portal's search limit is five a second, SHARED by every integration
-  // searching it, so a run keeps well under it. Single walks do not wait.
-  const PACE = { gap: 0, last: 0 };
-  async function hubspot(args){
-    const ns = await use("mcp");
-    if (!ns) throw { code: "no_connector" };
-    const call = async () => {
-      if (PACE.gap){ const w = PACE.last + PACE.gap - Date.now(); if (w > 0) await sleep(w); }
-      PACE.last = Date.now();
-      return ns.callTool("HubSpot", "search_crm_objects", Object.assign({
-        chatInsights: { userIntent: "Map how the accounts in this portal connect to each other", satisfaction: "NEUTRAL" }
-      }, args));
-    };
-    let r;
-    try { r = await call(); }
-    catch(e){
-      // One retry, and only for a failure the platform stamps as worth
-      // repeating (HubSpot throttling arrives as one). Everything else is
-      // the caller's to report. These are all reads, so a repeat is safe.
-      if (!(e && e.retryable === true)) throw e;
-      await sleep(Math.min(60000, Number(e.retryAfterMs) || 1200 + Math.random() * 1600));
-      r = await call();
-    }
-    return (r && r.payload) ? r.payload : r;
+  // An API call: a GET with no body, a POST with one. A failure carries the
+  // Worker's error code (no_identity, unavailable, rate_limited, …).
+  function api(path, body){
+    if (!window.ATLAS) return Promise.reject({ code: "unavailable", message: "the page's platform did not load" });
+    return window.ATLAS.api(path, body === undefined ? undefined : { body });
   }
-  // Every page of one search, up to `max` rows. HubSpot pages by offset and
-  // stops at 10,000 results for any one query.
-  async function hubspotAll(args, max, onPage){
-    const out = [], lim = Math.min(200, args.limit || 200);
-    let offset = 0, total = null;
-    while (out.length < max){
-      const r = await hubspot(Object.assign({}, args, { limit: lim }, offset ? { offset } : {}));
-      const rows = (r && r.results) || [];
-      if (r && r.total != null) total = Number(r.total);
-      rows.forEach(x => out.push(x));
-      if (onPage) onPage(out.length, total);
-      const next = r && r.offset != null ? Number(r.offset) : NaN;
-      if (rows.length < lim || !(next > offset) || next >= 10000) break;
-      offset = next;
-    }
-    return { rows: out.slice(0, max), total };
+  // A streamed call: one event per line, as the Worker sends them.
+  function apiStream(path, body, onEvent){
+    if (!window.ATLAS) return Promise.reject({ code: "unavailable" });
+    return window.ATLAS.stream(path, body, onEvent);
   }
-  // An association filter takes at most 100 ids, so a longer list is read
-  // in slices and the answers merged. Sent whole, 150 contacts made both
-  // outside-the-account reads fail — silently, as "self-contained".
-  async function byAssoc(objectType, fromType, ids, properties, limit, op){
-    const out = [], seen = new Set();
-    for (let i = 0; i < ids.length; i += 100){
-      const slice = ids.slice(i, i + 100);
-      const r = await hubspot({
-        objectType,
-        filterGroups: [{ associatedWith: [{ objectType: fromType, operator: op === "IN" || slice.length > 1 ? "IN" : "EQUAL",
-                                           objectIdValues: slice.map(Number) }] }],
-        properties, limit
-      });
-      ((r && r.results) || []).forEach(x => { if (!seen.has(String(x.id))){ seen.add(String(x.id)); out.push(x); } });
-    }
-    return out;
-  }
+  // The address bar follows what is on screen (#/company/123, #/sql …),
+  // without that counting as a navigation of its own.
+  function routeTo(hash){ if (window.ATLAS) window.ATLAS.navigate(hash, { replace: true, silent: true }); }
 
   /* =====================================================================
      4. THE DECK AND ITS CONSOLE

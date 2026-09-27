@@ -155,9 +155,21 @@
     return c;
   }
 
+  // what HubSpot has said of a record since the map read it
+  function goneText(n){
+    const g = n && n.gone;
+    if (!g) return "";
+    const when_ = g.at ? " " + ago(g.at) : "";
+    if (g.kind === "merged"){
+      const into = g.other && MAP.byKey[g.other] ? MAP.byKey[g.other].e.label : g.other ? "record " + String(g.other).split("/")[1] : "another record";
+      return "Merged into " + into + " in HubSpot" + when_;
+    }
+    return "Deleted in HubSpot" + when_;
+  }
   // What a node is, in one phrase — descriptive, never a verdict.
   function classify(n){
     if (!n) return "Record";
+    if (n.gone) return n.gone.kind === "merged" ? "Merged away in HubSpot" : "Deleted in HubSpot";
     if (n.kind === "company") return isStub(n) ? "Company · not walked yet" : "Account on the map";
     if (n.kind === "detached") return "Unattached · shares a number";
     const what = n.kind === "contact" ? "Person" : n.kind === "deal" ? "Commercial record" : "Lead record";

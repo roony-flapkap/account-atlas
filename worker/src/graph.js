@@ -78,11 +78,28 @@ const written = results => results.reduce((s, r) => s + (Number(r && r.meta && r
 
 // sets: [{ from: key, toType: "0-1", to: [{ key, typeId, label }] }] — each the
 // COMPLETE list of `from`'s associations to that type. Links in, links out.
-// `emitFor(key)` says whether a change row is wanted for links on that record
-// (not during the first fill, and not for a record seen for the first time).
-export async function applyLinks(env, sets, { source, emitFor = () => true, at = now() } = {}){
+// A difference is reported as a change only where the copy already held the
+// complete list (link_sync, or the first fill of that kind of link is done):
+// otherwise it is the copy learning, not HubSpot changing. `emit: false` (the
+// first fill) reports nothing; `track: false` does not record completeness
+// (the fill, whose job state says it instead, and saves the writes).
+export async function applyLinks(env, sets, { source, emit = true, track = source !== "backfill", at = now() } = {}){
   const out = { added: 0, removed: 0, changes: [], writes: 0 };
   if (!sets.length) return out;
+  const complete = new Set();
+  if (emit){
+    const types = [...new Set(sets.map(s => s.from.split("/")[0] + ">" + s.toType))];
+    const jobs = types.flatMap(p => { const [a, b] = p.split(">"); return ["links:" + a + ">" + b, "links:" + b + ">" + a]; });
+    const [js, ls] = await env.GRAPH.batch([
+      env.GRAPH.prepare("SELECT job FROM sync_state WHERE job IN (SELECT value FROM json_each(?1)) AND (status = 'done' OR finished_at IS NOT NULL)").bind(J(jobs)),
+      env.GRAPH.prepare("SELECT l.key AS key, l.to_type AS t FROM json_each(?1) j JOIN link_sync l ON l.key = json_extract(j.value,'$[0]') AND l.to_type = json_extract(j.value,'$[1]')")
+        .bind(J(sets.slice(0, 4000).map(s => [s.from, s.toType])))
+    ]);
+    const done = new Set((js.results || []).map(r => r.job));
+    for (const p of types){ const [a, b] = p.split(">"); if (done.has("links:" + a + ">" + b) || done.has("links:" + b + ">" + a)) complete.add("*" + p); }
+    for (const r of ls.results || []) complete.add(r.key + "|" + r.t);
+  }
+  const emitFor = s => emit && (complete.has(s.from + "|" + s.toType) || complete.has("*" + s.from.split("/")[0] + ">" + s.toType));
   const probe = sets.map(s => [s.from].concat(typeRange(s.toType)));
   const have = new Map();                         // "from|toType" -> Set(to)
   const slot = (from, t) => { const k = from + "|" + t; if (!have.has(k)) have.set(k, new Set()); return have.get(k); };
@@ -101,14 +118,14 @@ export async function applyLinks(env, sets, { source, emitFor = () => true, at =
       const id = s.from < k ? s.from + "|" + k : k + "|" + s.from;
       if (seen.has("+" + id)) continue; seen.add("+" + id);
       add.push([s.from, k, x.typeId ?? null, x.label ?? null], [k, s.from, x.typeId ?? null, x.label ?? null]);
-      if (emitFor(s.from)) out.changes.push({ kind: "linked", key: s.from, other: k });
+      if (emitFor(s)) out.changes.push({ kind: "linked", key: s.from, other: k });
     }
     for (const k of was){
       if (is.has(k)) continue;
       const id = s.from < k ? s.from + "|" + k : k + "|" + s.from;
       if (seen.has("-" + id)) continue; seen.add("-" + id);
       del.push([s.from, k], [k, s.from]);
-      if (emitFor(s.from)) out.changes.push({ kind: "unlinked", key: s.from, other: k });
+      if (emitFor(s)) out.changes.push({ kind: "unlinked", key: s.from, other: k });
     }
   }
   out.added = add.length / 2; out.removed = del.length / 2;
@@ -119,6 +136,10 @@ export async function applyLinks(env, sets, { source, emitFor = () => true, at =
     "ON CONFLICT(a, b) DO UPDATE SET type_id = excluded.type_id, label = excluded.label, synced_at = excluded.synced_at").bind(J(part), at)));
   await inChunks(del, 800, part => stmts.push(env.GRAPH.prepare(
     "DELETE FROM links WHERE (a, b) IN (SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]') FROM json_each(?1))").bind(J(part))));
+  // from now on these lists are known whole, so a later difference is a change
+  if (track) await inChunks(sets.map(s => [s.from, s.toType]), 800, part => stmts.push(env.GRAPH.prepare(
+    "INSERT INTO link_sync (key, to_type, at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?2 FROM json_each(?1) WHERE true " +
+    "ON CONFLICT(key, to_type) DO UPDATE SET at = excluded.at").bind(J(part), at)));
   if (stmts.length) out.writes = written(await env.GRAPH.batch(stmts));
   return out;
 }

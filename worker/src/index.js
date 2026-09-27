@@ -8,7 +8,7 @@ import { HttpError } from "./errors.js";
 import { HubSpotError } from "./hubspot.js";
 import { SqlError, runSql } from "./sql.js";
 import { walk } from "./walk.js";
-import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh } from "./api.js";
+import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh, tombstones } from "./api.js";
 import { handleHook } from "./hooks.js";
 import { tick, syncStatus } from "./sync.js";
 import { WS_PROTOCOL } from "./hub.js";
@@ -116,6 +116,7 @@ async function route(req, env, ctx){
   if (p === "/api/resolve" && M === "POST") return json(await resolve(env, await readJson(req, 2000)));
   if (p === "/api/expand" && M === "POST"){ const b = await readJson(req, 2000); return json(await expand(env, b.key, b.limit)); }
   if (p === "/api/records" && M === "POST"){ const b = await readJson(req, 50000); return json(await recordsFresh(env, b.keys)); }
+  if (p === "/api/tombstones" && M === "POST"){ const b = await readJson(req, 200000); return json(await tombstones(env, b.keys)); }
   if (p === "/api/changes" && M === "GET") return json(await changesSince(env, url.searchParams.get("since"), url.searchParams.get("limit")));
   if (p === "/api/segments" && M === "GET")
     return json(await searchSegments(env, url.searchParams.get("q"), (url.searchParams.get("types") || "").split(",").filter(Boolean)));

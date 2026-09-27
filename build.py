@@ -270,6 +270,19 @@ rep("""Press the canvas chip under the title to switch, make, rename, copy or de
     <p><b>Segments.</b>""", """Press the canvas chip under the title to switch, make, rename, copy or delete one. A private canvas can be <b>shared with everyone</b> in one press: it moves to the shared list, whole, and the private original is removed.</p>
     <p><b>Segments.</b>""")
 
+# 3e. the footer, as the site works now: through the Worker, with its SQL copy
+FOOTER = """<footer>
+    <p><b>What it does.</b> Walks one company's association graph — its contacts, deals and leads, how those link to each other, what any of them reach outside the account, and who shares its numbers without a link — then merges the result into a map that is kept between sessions. Walking a second company that shares a contact draws the two as one figure joined by that person.</p>
+    <p><b>Reads only.</b> HubSpot is read through the Atlas API with one read-only app for the whole team, so everyone signed in sees what that app can see; nothing is ever written back. Only verified @flapkap.com Google accounts get in. The API keeps a SQL copy of the CRM, kept current by HubSpot's own notices within seconds, a re-read every 15 minutes and a full re-check every night.</p>
+    <p><b>Changes.</b> Anything that changes in HubSpot — a record created, edited, deleted or merged, a link added or removed — arrives on this page as it happens. What touches this canvas is drawn at once: a deleted record struck through, a removed link faded, a new one glowing. <b>Refresh affected accounts</b>, under Changes, re-walks just the accounts it touched, which writes it into the canvas for good.</p>
+    <p><b>Canvases.</b> Every canvas is a separate map with its own accounts, its own opened-out records and its own arrangement — layout, dragged records and hives, filters and where the view was — all saved as they change. A <b>shared</b> canvas is read and changed by everyone signed in; a <b>private</b> one only by you. A private canvas can be <b>shared with everyone</b> in one press: it moves to the shared list, whole, and the private original is removed.</p>
+    <p><b>Segments.</b> Search HubSpot's segments by name and bring one onto the canvas. <b>Drop in</b> reads its members and lays their companies out in a field under the map, not walked; a contact or deal segment is traced to the companies its members are on. At most 2,000 members are read. <b>Find the mesh</b> finds the people on more than one of those companies, and which, in a few bulk reads, and draws the links. <b>Walk</b> walks the next 100 members in full, linked ones first.</p>
+    <p><b>SQL console.</b> Ask the copy directly: read-only, one SELECT at a time, at most 1,000 rows, logged. Canvases are not in it. <b>Times are UTC</b>, as HubSpot's API returns them — not the UTC+4 that CSV exports render.</p>
+    <svg class="fkmark" role="img" aria-label="FlapKap"><use href="#fkmark"/></svg>
+  </footer>"""
+assert s.count("<footer>") == 1 and s.count("</footer>") == 1
+s = re.sub(r"<footer>.*?</footer>", lambda m: FOOTER, s, flags=re.S)
+
 # 4. the script, into the one placeholder the template keeps for it
 rep("/*@@ATLAS@@*/", "@@ATLAS@@")
 s=s.replace("@@ATLAS@@", js)

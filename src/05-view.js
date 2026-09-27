@@ -165,6 +165,8 @@
       el.classList.toggle("n-stub", isStub(n));
       el.classList.toggle("gmis", !!n.mis);
       el.classList.toggle("gdone", !!n.xd);
+      // deleted or merged away in HubSpot since it was read: struck through, kept until the account is refreshed
+      el.classList.toggle("ggone", !!n.gone);
       n.el = el; n.lab = el.querySelector(".glabel"); n.subEl = el.querySelector(".gsubl");
       return el;
     }
@@ -280,6 +282,8 @@
         if (ed.rel === "detached") cls.push("n-detached");
         if (w === "eecho") cls.push("n-echo");
         if (ed.cross) cls.push("n-cross");
+        // a link HubSpot has removed fades; one it has added (not yet walked in) glows
+        if (ed.gone) cls.push("egone"); else if (ed.fresh) cls.push("efresh");
         if (touches) cls.push("glit"); else if (near) cls.push("gdim");
         p.setAttribute("class", cls.join(" "));
         const s = sparkEls.get(ed.id);
@@ -427,6 +431,7 @@
       if (n.kind !== "company" && n.companyIds.length > 1) row("On accounts", n.companyIds.map(companyName).join(" · "), true);
       if (n.segs.length) row("Segment", n.segs.map(id => MAP.segments[id] ? MAP.segments[id].name : id).join(" · "));
       if (n.kind === "detached") row("Attached to", "nothing on this map", true);
+      if (n.gone) row("In HubSpot", goneText(n), true);
       return '<div class="tc">' + esc(classify(n)) + '</div><div class="tn">' + esc(n.e.label) + "</div>" +
              (n.e.sub ? '<div class="ts">' + esc(n.e.sub) + "</div>" : "") +
              (rows || '<div class="tr"><span class="tnone">Nothing more was read about this record.</span></div>') +
@@ -463,7 +468,8 @@
           (linked.length > 16 ? ' <span class="inone">and ' + (linked.length - 16) + " more</span>" : "")
         : '<span class="inone">nothing on this map</span>';
       let note = "";
-      if (n.kind === "detached") note = "Carries a phone number used on an account here but links to nothing on the map. Activity logged against it is invisible from the account sharing that number.";
+      if (n.gone) note = goneText(n) + ". It stays on the map, struck through, until the account it belongs to is refreshed or re-walked.";
+      else if (n.kind === "detached") note = "Carries a phone number used on an account here but links to nothing on the map. Activity logged against it is invisible from the account sharing that number.";
       else if (isStub(n) && n.field) note = "Brought in by a segment and not walked yet. Nothing on the map links to it so far. Walk it, or use Segments to find the links or walk the segment in batches.";
       else if (isStub(n)) note = "A record on the map belongs to this company, but it has never been walked. Press Walk it to bring it onto the map.";
       else if (n.companyIds.length > 1) note = "This record belongs to " + n.companyIds.length + " accounts on the map. Either the same person works for two businesses, or one of the two company records is a duplicate.";
@@ -476,7 +482,7 @@
       insp.innerHTML =
         '<div class="ik"><span>' + esc(classify(n)) + '</span><span class="iid">record ' + esc(n.id) + "</span></div>" +
         '<div class="iv">' + esc(n.e.label) + "</div>" +
-        (note ? '<div class="isub' + (n.mis || n.kind === "detached" ? " bad" : "") + '">' + esc(note) + "</div>" : "") +
+        (note ? '<div class="isub' + (n.mis || n.gone || n.kind === "detached" ? " bad" : "") + '">' + esc(note) + "</div>" : "") +
         rows + walkLine +
         '<div class="irow"><span class="il">Linked to</span><span class="iv2">' + linkHtml + "</span></div>" +
         '<div class="iacts">' + acts + "</div>";

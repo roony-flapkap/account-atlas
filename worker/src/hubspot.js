@@ -47,7 +47,8 @@ export function hubspotClient(env, opts = {}){
       stats.calls++; if (kind === "search") stats.search++;
       let res;
       try {
-        res = await (opts.fetch || fetch)(BASE + path, {
+        // HUBSPOT_BASE is set only by local runs (a synthetic HubSpot on this machine); never in production
+        res = await (opts.fetch || fetch)((env.HUBSPOT_BASE || BASE) + path, {
           method,
           headers: { authorization: "Bearer " + env.HUBSPOT_TOKEN, "content-type": "application/json" },
           body: body === undefined ? undefined : JSON.stringify(body),

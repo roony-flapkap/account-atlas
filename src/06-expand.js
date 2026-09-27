@@ -28,16 +28,8 @@
       row.querySelector(".xs").textContent = note || (bad ? "[ FAIL ]" : "[ OK ]");
     }
 
-    // every record asks for the three other kinds
-    const KINDS = { company: "COMPANY", deal: "DEAL", lead: "LEAD", contact: "CONTACT", detached: "CONTACT" };
-    const AS = { CONTACT: "contacts", COMPANY: "companies", DEAL: "deals", LEAD: "leads" };
-    function dFor(type, r, from){
-      const home = from.hive || hiveKeyOf(from);
-      if (type === "CONTACT") return dContact(r, null, home);
-      if (type === "COMPANY") return dCompany(r);
-      if (type === "DEAL") return dDeal(r, null, home);
-      return dLead(r, null, home);
-    }
+    // every record asks for the three other kinds, in one call to the Worker
+    const KIND_WORD = { contact: "contacts", company: "companies", deal: "deals", lead: "leads" };
     // spiral out from the record that fetched it and take the first place
     // with real room; if nothing clears, the roomiest place tried
     function freeSpot(anchor, self){
@@ -59,17 +51,23 @@
     // ONE record's reads, merged into the model. The single press and
     // Expand all both drive this, so they cannot drift apart.
     async function expandOne(node, verbose){
-      const self = KINDS[node.kind] || "CONTACT";
-      const want = ["CONTACT", "COMPANY", "DEAL", "LEAD"].filter(k => k !== self);
-      const r = { added: 0, linked: 0, failed: 0, known: 0, reads: want.length, keys: [], fresh: [] };
+      const self = node.kind === "detached" ? "contact" : node.kind;
+      const want = ["contact", "company", "deal", "lead"].filter(k => k !== self);
+      const r = { added: 0, linked: 0, failed: 0, known: 0, reads: 1, keys: [], fresh: [] };
+      const row0 = verbose ? xline("Read " + want.map(k => KIND_WORD[k]).join(", "), "run") : null;
+      let res;
+      try { res = await api("/api/expand", { key: node.key, limit: EXPAND.limit }); }
+      catch(e){ r.failed = 1; xend(row0, "[ FAIL ]", true); return r; }
+      xend(row0, "[ OK ]");
+      // what arrives from a record lives where that record lives
+      const home = node.hive || hiveKeyOf(node);
       for (const type of want){
-        const row = verbose ? xline("Read " + type.toLowerCase() + "s", "run") : null;
-        let hits;
-        try { hits = await byAssoc(type, AS[self], [node.id], ASKFOR[type], EXPAND.limit, "EQUAL"); }
-        catch(e){ r.failed++; xend(row, "[ FAIL ]", true); continue; }
-        xend(row, hits.length + " FOUND");
-        for (const h of hits){
-          const d = dFor(type, h, node);
+        const got = (res.found || {})[type] || { total: 0, records: [] };
+        if (verbose) xline(esc(KIND_WORD[type]) + " · <b>" + got.records.length + "</b>" +
+                           (got.total > got.records.length ? " of " + fmt(got.total) : "") + " found", "sum");
+        for (const d0 of got.records){
+          if (!validRecord(d0)) continue;
+          const d = d0.kd === "company" ? d0 : Object.assign({}, d0, { hh: home });
           const had = MAP.byKey[d.k];
           if (had) r.known++;
           const m = mergeNode(d, new Date().toISOString());
@@ -150,7 +148,7 @@
       b.textContent = n ? "Expand search · all " + fmt(n) : "All expanded";
       b.title = n
         ? "Expand search on the " + fmt(n) + " " + plural(n, "record") + " shown that " + (n === 1 ? "has" : "have") +
-          " not been opened out yet · " + EXPAND.reads + " HubSpot reads each" + (n > EXPAND.perPress ? " · " + EXPAND.perPress + " records a press" : "")
+          " not been opened out yet · one request each" + (n > EXPAND.perPress ? " · " + EXPAND.perPress + " records a press" : "")
         : "Every record shown has been opened out. Companies are walked, not expanded.";
     }
     function xallPress(b){
@@ -166,7 +164,7 @@
       if (!allArm){
         b.className = "gtool wide gall arm";
         b.textContent = "Press again · " + (take < list.length ? "first " + take + " of " + fmt(list.length) : fmt(take) + " " + plural(take, "record")) +
-                        " · " + fmt(take * EXPAND.reads) + " reads";
+                        " · " + fmt(take * EXPAND.reads) + " " + plural(take * EXPAND.reads, "request");
         allArm = setTimeout(() => { allArm = null; paintXall(); }, 4000);
         return;
       }

@@ -25,9 +25,23 @@
     if (g) g.textContent = name + (CV.cur && CV.cur.scope === "private" ? " · private" : "");
     paintSegChip();
   }
-  function paintHsChip(up){
-    $("chipHs").className = "chip " + (up ? "on" : "off");
-    $("chipHsTxt").textContent = "HubSpot · " + (up ? "connected" : "not available in this view");
+  // HubSpot, through the Worker: whether it answers, and how far its SQL
+  // copy of the CRM has filled
+  async function paintHsChip(){
+    const chip = $("chipHs"), txt = $("chipHsTxt");
+    try {
+      const s = await api("/api/sync/status");
+      const c = (s && s.copy) || {}, kinds = ["companies", "contacts", "deals", "leads"];
+      const all = kinds.every(k => c[k] && c[k].done);
+      const n = kinds.reduce((t, k) => t + ((c[k] && c[k].records) || 0), 0);
+      chip.className = "chip on";
+      txt.textContent = "HubSpot · read-only · " + (all ? "SQL copy complete" : "SQL copy filling · " + fmt(n) + " records");
+      chip.title = kinds.map(k => k + " " + fmt((c[k] || {}).records || 0) + ((c[k] || {}).done ? " (all)" : "")).join(" · ") +
+        (s.today ? " · today " + fmt(s.today.sync_writes) + " of " + fmt(s.today.writeBudget) + " rows written" : "");
+    } catch(e){
+      chip.className = "chip off";
+      txt.textContent = "HubSpot · " + (e && e.code === "no_identity" ? "sign in" : "not reachable");
+    }
   }
   // what the canvas already holds, so the gate is never blank over work done
   function paintGateMap(){
@@ -126,6 +140,7 @@
       rememberCanvas(c);
       VIEW.setViewState(c.view);
       const n = await loadCanvas(c);
+      markTombstones();
       closeCanvasPanel();
       renderRoster(); paintGateMap();
       // a canvas holding only a segment's field is not empty
@@ -341,7 +356,7 @@
     } catch(e){
       if (seq !== SGS.seq) return;
       SGS.rows = []; SGS.total = null;
-      SGS.err = e && e.code === "no_connector" ? "The HubSpot connector is not available in this view, so segments cannot be searched."
+      SGS.err = e && e.code === "no_identity" ? "You are signed out, so segments cannot be searched. Sign in again."
               : "HubSpot could not answer the search · " + why(e) + ".";
     } finally { if (seq === SGS.seq){ SGS.loading = false; paintSegList(); } }
   }
@@ -390,42 +405,38 @@
     const seg = MAP.segments[meta.id], st = segStats(meta.id), busy = segBusy(), mineRunning = SEGJOB && SEGJOB.seg.id === meta.id;
     const tooBig = meta.size > SEGCAP;
     const armed = k => SGS.arm === meta.id + ":" + k;
-    const btn = (k, label, cost, on, extra) => '<button type="button" class="act' + (k === "walk" || k === "drop" || k === "scan" || k === "trace" ? " go" : "") +
+    const btn = (k, label, cost, on, extra) => '<button type="button" class="act' + (k === "walk" || k === "drop" || k === "scan" ? " go" : "") +
       (armed(k) ? " arm" : "") + '" data-sg="' + k + '"' + (on && !busy ? "" : " disabled") + ">" +
       esc(armed(k) ? "Press again · " + label : label) + (cost != null ? ' <span class="sgcost">· ' + esc(cost) + "</span>" : "") + "</button>" + (extra || "");
-    const reads = n => "about " + fmt(n) + " " + plural(n, "read");
+    const reads = n => "about " + fmt(n) + " HubSpot " + plural(n, "call");
     let steps = "";
     // 1 · drop in / refresh
     steps += '<div class="sgstep"><span class="sgn">1</span><div class="sgsd"><b>' + (seg ? "Refresh the members" : "Drop in") + "</b><span>" +
       (seg ? "Read the segment again: who joined is added, who left is taken off." + (seg.refreshedAt || seg.importedAt ? " Last read " + esc(ago(seg.refreshedAt || seg.importedAt)) + "." : "")
            : "Its " + (meta.type === "0-2" ? "companies" : "members’ companies") + " land in a field under the map, not walked yet." +
-             (tooBig ? " Only the " + fmt(SEGCAP) + " most recently created of " + fmt(meta.size) + " are read." : "")) +
+             (tooBig ? " Only the first " + fmt(SEGCAP) + " of " + fmt(meta.size) + " are read." : "")) +
       "</span></div>" + btn("drop", seg ? "Refresh" : "Drop in", reads(segCost(meta, "drop")), meta.size > 0) + "</div>";
     // 2 · mesh
     let meshBtn, meshTxt;
-    if (!seg) { meshTxt = "After it is dropped in: find the people on more than one of its companies, then draw each one’s links."; meshBtn = btn("scan", "Find shared people", null, false); }
-    else if (seg.mesh && seg.mesh.pending.length){
-      meshTxt = fmt(seg.mesh.found) + " " + plural(seg.mesh.found, "person", "people") + " on more than one company · " + fmt(seg.mesh.done) + " traced. Tracing reads each person’s companies and draws the links.";
-      meshBtn = btn("trace", (seg.mesh.done ? "Continue · " : "Trace ") + fmt(seg.mesh.pending.length) + " " + plural(seg.mesh.pending.length, "person", "people"),
-                    reads(segCost(meta, "trace")), true, btn("scan", "Scan again", reads(segCost(meta, "scan")), true));
-    } else if (seg.mesh && seg.mesh.found){
-      meshTxt = "All " + fmt(seg.mesh.found) + " shared " + plural(seg.mesh.found, "person", "people") + " traced · " + fmt(st.linked) + " of " + fmt(st.members) + " members linked. Scan again after a refresh.";
+    if (!seg) { meshTxt = "After it is dropped in: find the people on more than one of its companies, and draw their links."; meshBtn = btn("scan", "Find shared people", null, false); }
+    else if (seg.mesh && seg.mesh.found){
+      meshTxt = fmt(seg.mesh.found) + " shared " + plural(seg.mesh.found, "person", "people") + " found and drawn · " + fmt(st.linked) + " of " + fmt(st.members) + " members linked. Scan again after a refresh.";
       meshBtn = btn("scan", "Scan again", reads(segCost(meta, "scan")), true);
     } else if (seg.mesh){
       meshTxt = "No one is on more than one of these companies.";
       meshBtn = btn("scan", "Scan again", reads(segCost(meta, "scan")), true);
     } else {
-      meshTxt = "Find the people on more than one of its companies (HubSpot counts them, one read per 100 companies), then trace each one’s companies — one read a person.";
+      meshTxt = "Find the people on more than one of its companies, and which companies they are on — a handful of bulk reads, however many there are — and draw the links.";
       meshBtn = btn("scan", "Find shared people", reads(segCost(meta, "scan")), st.members > 0);
     }
     steps += '<div class="sgstep"><span class="sgn">2</span><div class="sgsd"><b>Find the mesh</b><span>' + esc(meshTxt) + "</span></div>" + meshBtn + "</div>";
     // 3 · walk
     const left = seg ? segWalkable(meta).length : 0, next = Math.min(left, SEGWALK);
     steps += '<div class="sgstep"><span class="sgn">3</span><div class="sgsd"><b>Walk</b><span>' +
-      (seg ? (left ? "Walk the next " + fmt(next) + " in full, linked ones first — " + fmt(left) + " not walked yet. Paced under 3 reads a second, so at least " +
-                     dur(segCost(meta, "walk") * SEGPACE) + "; it can be stopped and picks up where it stopped."
+      (seg ? (left ? "Walk the next " + fmt(next) + " in full, linked ones first — " + fmt(left) + " not walked yet. A second or two a company; " +
+                     "it can be stopped and picks up where it stopped."
                    : "Every member is walked.")
-           : "After it is dropped in: walk its companies in batches of " + SEGWALK + ", about 12 reads each.") + "</span></div>" +
+           : "After it is dropped in: walk its companies in batches of " + SEGWALK + ", about 15 HubSpot calls each.") + "</span></div>" +
       btn("walk", "Walk next " + fmt(next || SEGWALK), seg && left ? reads(segCost(meta, "walk")) : null, !!(seg && left)) + "</div>";
     const stats = st ? '<div class="sgstats"><span><b>' + fmt(st.members) + "</b> on this canvas</span><span><b>" + fmt(st.walked) + "</b> walked</span><span><b>" +
       fmt(st.linked) + "</b> linked to another company</span>" + (seg.traced ? "<span>traced from <b>" + fmt(seg.traced) + "</b> " + TYPEWORD[meta.type] + "</span>" : "") + "</div>" : "";
@@ -487,7 +498,6 @@
     let r;
     if (act === "drop"){ r = await segDropIn(meta); if (r.ok && !MAP.segments[meta.id]) r = { ok: false, why: "not kept" }; }
     else if (act === "scan") r = await segMeshScan(meta.id);
-    else if (act === "trace"){ if (!segArm(meta.id + ":trace")) return; r = await segMeshTrace(meta.id); }
     else if (act === "walk"){ if (!segArm(meta.id + ":walk")) return; r = await segWalk(meta.id); }
     else if (act === "remove"){
       if (!segArm(meta.id + ":remove")) return;
@@ -590,39 +600,3 @@
     else if (PHASE === "run" && ROOT.getAttribute("data-state") === "error"){ logReset(); setPhase("gate"); }
   });
 
-  /* ---------------- boot ----------------
-     Nothing is fetched from HubSpot on load. The canvas this viewer had
-     open last (or the Main map) is read back from the store and drawn; an
-     empty one leaves the gate up. */
-  setPhase("gate");
-  BOOT = (async function boot(){
-    logReset();
-    const sR = logStep("RESTORE CANVAS FROM STORE");
-    // the connector check can take seconds; the map does not wait for it
-    use("mcp").then(ns => paintHsChip(!!ns));
-    let n = 0;
-    try {
-      const u = await use("user");
-      CV.uid = u ? await u.id() : null;
-      await listCanvases();
-      const want = recalledCanvas();
-      CV.cur = CV.list.find(c => want && c.id === want.id && c.scope === want.scope) || CV.list.find(isMain);
-      VIEW.setViewState(CV.cur.view);
-      n = await loadCanvas(CV.cur);
-    } catch(e){
-      DB_STATE = { known: true, up: false, why: "unreadable" };
-      if (!CV.cur) CV.cur = normCanvas(MAIN_ID, "shared", null, false);
-    }
-    paintGateMap();
-    if (!n && !MAP.nodes.length){ stepOk(sR, DB_STATE.up ? "EMPTY" : String(DB_STATE.why).toUpperCase()); logReset(); return; }
-    setPhase("run");
-    logLine("SESSION <b>RESTORE</b> &middot; OPERATOR " + esc(OPERATOR));
-    const sg = MAP.segOrder.length;
-    stepOk(sR, esc(CV.cur.name).toUpperCase() + " &middot; " + n + " " + plural(n, "ACCOUNT") + (sg ? " &middot; " + sg + " " + plural(sg, "SEGMENT") : ""));
-    const c = mapCounts();
-    logLine("RECORDS &middot; <b>" + fmt(c.records) + "</b> &middot; LINKS &middot; <b>" + fmt(MAP.edges.length) + "</b>");
-    if (c.shared) logLine("<b>" + c.shared + "</b> " + plural(c.shared, "RECORD") + " ON MORE THAN ONE ACCOUNT", "err");
-    prog(100, "MAP RESTORED");
-    await openMap();
-  })().catch(() => {}).then(() => { BOOT = null; });
-})();

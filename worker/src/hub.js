@@ -8,6 +8,12 @@ import { DurableObject } from "cloudflare:workers";
 export const WS_PROTOCOL = "atlas.v1";
 
 export class ChangeHub extends DurableObject {
+  constructor(ctx, env){
+    super(ctx, env);
+    // pages ping to keep the socket open; answered without waking the object
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
   async fetch(req){
     if ((req.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response("expected a WebSocket", { status: 426 });
     const pair = new WebSocketPair();

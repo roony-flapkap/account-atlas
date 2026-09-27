@@ -148,7 +148,7 @@ async function linkSlice(env, hs, j, spec, relink){
   const sets = ids.map(id => ({ from: recKey(from, id), toType: to,
     to: (got.get(id) || []).map(x => ({ key: recKey(to, x.id), typeId: x.typeId, label: x.label })) }));
   // the first fill says nothing; a re-read says what it found different
-  const res = await applyLinks(env, sets, { source: relink ? "nightly" : "backfill", emitFor: () => relink });
+  const res = await applyLinks(env, sets, { source: relink ? "nightly" : "backfill", emit: relink, track: false });
   if (res.changes.length){ const last = await recordChanges(env, res.changes, "nightly"); await announce(env, last, res.changes); }
   j.cursor = keys[keys.length - 1];
   const d = JSON.parse(j.detail || "{}"); d.records = (d.records || 0) + keys.length; d.links = (d.links || 0) + res.added; j.detail = JSON.stringify(d);
