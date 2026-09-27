@@ -55,7 +55,9 @@
 
   // owner, user and stage names arrive already written on each record: the
   // Worker reads them from HubSpot, so the page carries no table of people
-  const recUrl = (t, id) => "https://app.hubspot.com/contacts/" + PORTAL + "/record/" + t + "/" + id;
+  // the portal is hosted in HubSpot's EU data centre, so its pages are on app-eu1
+  const HS_APP = "https://app-eu1.hubspot.com";
+  const recUrl = (t, id) => HS_APP + "/contacts/" + PORTAL + "/record/" + t + "/" + id;
   const recKey = (t, id) => t + "/" + id;
   const companyKey = id => recKey("0-2", id);
 

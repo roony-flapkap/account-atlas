@@ -18,7 +18,7 @@
     "0-1": { one: "contact", many: "contacts" },
     "0-3": { one: "deal",    many: "deals" }
   };
-  const segUrl = id => "https://app.hubspot.com/contacts/" + PORTAL + "/objectLists/" + encodeURIComponent(id);
+  const segUrl = id => HS_APP + "/contacts/" + PORTAL + "/objectLists/" + encodeURIComponent(id);
   const cidOf = key => String(key).slice(4);            // "0-2/123" -> "123"
 
   // the run in progress, and whoever wants to hear about it (the panel, the chip)
