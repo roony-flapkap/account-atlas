@@ -116,6 +116,34 @@ export async function recordsFresh(env, keys){
   return { records, missing };
 }
 
+// ---------------------------------------------------------------- the companies of some records
+// A SQL result or a finding names records of every kind; a canvas holds
+// companies. Company keys stand; a contact, deal or lead stands for the
+// companies it is on — from the copy's links, and from HubSpot (in bulk) for
+// what the copy has not linked yet.
+export async function companiesOf(env, keys){
+  keys = [...new Set((keys || []).map(String))].filter(k => { const [t, id] = k.split("/"); return typeOk(t) && idOk(id); }).slice(0, 5000);
+  const cos = new Set(keys.filter(k => k.startsWith(T.company + "/")).map(k => k.split("/")[1]));
+  const others = keys.filter(k => !k.startsWith(T.company + "/"));
+  const from = { companies: cos.size, contacts: 0, deals: 0, leads: 0 };
+  for (const k of others) from[{ [T.contact]: "contacts", [T.deal]: "deals", [T.lead]: "leads" }[k.split("/")[0]]]++;
+  const linked = new Set();
+  for (let i = 0; i < others.length; i += 500){
+    const r = await env.GRAPH.prepare("SELECT a, b FROM links WHERE a IN (SELECT value FROM json_each(?1)) AND b >= '0-2/' AND b < '0-20'")
+      .bind(JSON.stringify(others.slice(i, i + 500))).all();
+    for (const x of r.results || []){ cos.add(x.b.split("/")[1]); linked.add(x.a); }
+  }
+  const hs = hubspotClient(env);
+  const unknown = others.filter(k => !linked.has(k));
+  for (const t of [T.contact, T.deal, T.lead]){
+    const ids = unknown.filter(k => k.startsWith(t + "/")).map(k => k.split("/")[1]);
+    if (!ids.length) continue;
+    const m = await hs.assoc(t, T.company, ids.slice(0, 3000));
+    for (const list of m.values()) for (const x of list) cos.add(x.id);
+  }
+  return { companies: await companyStubs(env, hs, [...cos].slice(0, 5000)), from };
+}
+
 // ---------------------------------------------------------------- tombstones
 // Which of these records the copy knows are gone from HubSpot (deleted, or
 // merged into another), so a canvas can show it after a reload too.

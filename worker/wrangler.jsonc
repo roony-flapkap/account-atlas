@@ -17,8 +17,8 @@
     // free plan: 100,000 rows written a day, and D1 stops answering when it runs out.
     // The sync stops for the day at this many, leaving the rest for canvases and webhooks.
     "SYNC_WRITE_BUDGET": "80000",
-    // free plan: 5,000,000 rows read a day; the SQL console may use this many of them
-    "SQL_READ_BUDGET": "1000000",
+    // free plan: 5,000,000 rows read a day; the SQL console and the Findings may use this many of them
+    "SQL_READ_BUDGET": "2000000",
     "SESSION_HOURS": "12"
   },
   // secrets (wrangler secret put …), never in this public file:

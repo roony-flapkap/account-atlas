@@ -776,6 +776,55 @@
   .gedge.egone{stroke:var(--alert)!important;stroke-opacity:.35!important;stroke-dasharray:2 5!important}
   .gedge.efresh{stroke:var(--green)!important;stroke-opacity:.9!important;stroke-dasharray:6 3!important;
     filter:drop-shadow(0 0 3px rgba(69,209,124,.6))}
+
+  /* ---------- findings: a sidebar inside the map ---------- */
+  .gside{position:absolute;top:8px;right:8px;bottom:8px;width:min(360px,44%);z-index:6;display:flex;flex-direction:column;
+    background:rgba(13,14,17,.96);border:1px solid var(--rule);box-shadow:0 0 40px rgba(0,0,0,.55);backdrop-filter:blur(2px)}
+  .gsidehead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px 7px;border-bottom:1px solid var(--rule)}
+  .gsidet{font-size:10px;font-weight:600;letter-spacing:.26em;text-transform:uppercase;color:var(--red)}
+  .gsidet::before{content:"// "}
+  .gsidex{padding:3px 8px;font-size:8.5px}
+  .gsidelede{font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.03em;margin:8px 11px 2px}
+  .gsidelist{flex:1 1 auto;overflow:auto;padding:0 11px 12px}
+  .gsidetab{position:absolute;top:8px;right:8px;z-index:6;font-family:var(--mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;
+    background:var(--panel);color:var(--red);border:1px solid var(--red-dim);padding:6px 10px;cursor:pointer}
+  .gsidetab:hover{background:var(--panel-2)}
+  .fdgroup{font-size:8.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--dim-2);margin:14px 0 5px}
+  .fd{border:1px solid var(--rule);background:var(--panel);margin-top:-1px}
+  .fd.open{border-color:var(--red-dim);background:var(--accent-film);position:relative;z-index:1}
+  .fdh{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 10px;background:none;border:0;cursor:pointer;
+    font-family:var(--mono);text-align:left;color:var(--ink)}
+  .fdh:hover .fdt{color:var(--red)}
+  .fdt{font-size:11px;letter-spacing:.04em}
+  .fdn{font-size:10px;color:var(--accent);letter-spacing:.06em;white-space:nowrap}
+  .fdn.wait{color:var(--amber)}
+  .fdb{padding:0 10px 10px}
+  .fdl{font-size:10px;line-height:1.5;color:var(--dim);margin:0 0 6px}
+  .fdw{font-size:9.5px;line-height:1.5;color:var(--amber);margin:0 0 6px}
+  .fdrows{max-height:340px;overflow:auto;border-top:1px solid var(--rule)}
+  .fdr{padding:6px 0;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px}
+  .fdgo{font-family:var(--mono);font-size:10.5px;text-align:left;background:none;border:0;padding:0;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
+  .fdgo:hover{color:var(--red)}
+  .fds{font-size:9.5px;color:var(--accent);border:1px solid var(--accent-dim);padding:0 5px;align-self:start}
+  .fdd{grid-column:1 / -1;font-size:9.5px;color:var(--dim);letter-spacing:.03em}
+  .fdmore{margin-top:8px;font-size:8.5px}
+  .fdmeta{font-size:9px;color:var(--dim-2);letter-spacing:.06em;margin:6px 0 0}
+  .fdacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+  .fdacts .act{padding:4px 9px;font-size:8.5px}
+  @media (max-width:700px){ .gside{left:8px;width:auto} }
+
+  /* ---------- add to canvas ---------- */
+  .atc{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%}
+  .atcsel,.atcname,.sqlname{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;background:var(--void);color:var(--ink);
+    border:1px solid var(--red-dim);padding:4px 7px;outline:none;min-width:0}
+  .atcsel{max-width:210px}
+  .atcname,.sqlname{flex:1 1 150px}
+  .atcname::placeholder,.sqlname::placeholder{color:var(--dim-2)}
+  .atcnote{font-size:9.5px;color:var(--amber);letter-spacing:.04em;flex-basis:100%}
+  .atcnote:empty{display:none}
+  .sqlatc{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0 0}
+  .sqlatc:empty{display:none}
+  .sqlatcl{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
 </style>
 <!-- the phase is stamped before the rest of the body parses, so the console
      never shows for a frame on the way to the gate -->

@@ -216,12 +216,15 @@
       '<div id="sqlpanel" class="cvp" hidden><div class="cvbox frame sqlbox" role="dialog" aria-modal="true" aria-labelledby="sqltitle">' +
         '<div class="cvhead"><h2 id="sqltitle">SQL console</h2><button type="button" class="act" data-sq="close">Close</button></div>' +
         '<p class="cvlede">Read-only SQL against the Worker\'s copy of the CRM: <b>records</b>, <b>links</b> (both directions), <b>phones</b>, ' +
-          '<b>changes</b>, <b>segments</b>, <b>segment_members</b>, <b>sync_state</b>. One SELECT at a time, 1,000 rows at most, logged. ' +
+          '<b>changes</b>, <b>segments</b>, <b>segment_members</b>, <b>sync_state</b> — and the views <b>company_keys</b>, <b>contact_keys</b> (cleaned and sound-alike names), ' +
+          '<b>duplicate_pairs</b>, <b>contact_duplicate_pairs</b> (with a score and the evidence) and <b>shared_numbers</b>. One SELECT at a time, 1,000 rows at most, logged. ' +
+          'Any records in a result can be added to a canvas. ' +
           'Canvases are not in it. Keys read <b>0-2/…</b> company · <b>0-1/…</b> contact · <b>0-3/…</b> deal · <b>0-136/…</b> lead. Ctrl+Enter runs.</p>' +
         '<div class="sqlex" id="sqlex"></div>' +
         '<textarea id="sqlq" rows="7" spellcheck="false" autocomplete="off" aria-label="SQL query"></textarea>' +
         '<div class="sqlbar"><button type="button" class="act go" data-sq="run">Run</button><button type="button" class="act" data-sq="csv" disabled>CSV</button>' +
           '<span class="sqlstat" id="sqlstat" role="status" aria-live="polite"></span></div>' +
+        '<div class="sqlatc" id="sqlatc"></div>' +
         '<div class="sqlres" id="sqlres"></div>' +
       "</div></div>");
 
@@ -245,12 +248,15 @@
       if (x){ $("sqlq").value = SQL_EXAMPLES[Number(x.getAttribute("data-sqx"))].sql; $("sqlq").focus(); return; }
       const g = e.target.closest && e.target.closest("[data-sqgo]");
       if (g){ closeSql(); goToKey(g.getAttribute("data-sqgo")); return; }
+      const go = e.target.closest && e.target.closest(".atcgo");
+      if (go){ atcGo(go); return; }
       const b = e.target.closest && e.target.closest("[data-sq]");
       if (!b || b.disabled) return;
       const a = b.getAttribute("data-sq");
       if (a === "close") closeSql(); else if (a === "run") runSql(); else if (a === "csv") sqlCsv();
     });
     $("sqlq").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)){ e.preventDefault(); runSql(); } });
+    $("sqlpanel").addEventListener("change", e => { const s = e.target.closest && e.target.closest(".atcsel"); if (s) atcSel(s); });
     // Escape closes these first, before anything underneath hears it
     document.addEventListener("keydown", e => {
       if (e.key !== "Escape") return;
@@ -333,6 +339,11 @@
 
   /* ---------------- the SQL console ---------------- */
   const SQL_EXAMPLES = [
+    { label: "Smart duplicates", sql:
+      "SELECT a, b, a_label, b_label, score, same_name, same_sound, same_domain, same_phone, shared_people, same_owner, created_close\n" +
+      "FROM duplicate_pairs\nWHERE score >= 4\nORDER BY score DESC\nLIMIT 200" },
+    { label: "One number, many companies", sql:
+      "SELECT tail, companies, contacts, keys\nFROM shared_numbers\nWHERE NOT junk AND companies >= 3\nORDER BY records DESC\nLIMIT 100" },
     { label: "People on 2+ companies", sql:
       "SELECT l.a AS contact, r.label AS name, count(*) AS companies\nFROM links l JOIN records r ON r.key = l.a\n" +
       "WHERE l.a >= '0-1/' AND l.a < '0-10' AND l.b >= '0-2/' AND l.b < '0-20'\nGROUP BY l.a HAVING count(*) > 1\nORDER BY companies DESC LIMIT 200" },
@@ -364,7 +375,13 @@
     stat.className = "sqlstat"; stat.textContent = "Running…";
     try {
       const r = await api("/api/sql", { sql });
-      SQ.last = r;
+      SQ.last = r; SQ.lastSql = sql;
+      // any records in the result can go onto a canvas, as the companies they are on
+      const found = keysIn(r.rows).length;
+      $("sqlatc").innerHTML = found
+        ? '<span class="sqlatcl">' + fmt(found) + " " + plural(found, "record") + " in this result</span>" +
+          '<input id="sqlname" class="sqlname" type="text" maxlength="60" placeholder="NAME THIS LIST" aria-label="Name this list">' + atcHtml("sql")
+        : "";
       stat.textContent = fmt(r.rows.length) + " " + plural(r.rows.length, "row") + (r.truncated ? " (the first 1,000)" : "") + " · " + fmt(r.ms) + " ms · " +
                          fmt(r.rowsRead) + " rows read · today " + fmt(r.readToday) + " of " + fmt(r.readBudget);
       const cell = v => {
@@ -379,6 +396,7 @@
       $("sqlpanel").querySelector('[data-sq="csv"]').disabled = !r.rows.length;
     } catch(e){
       SQ.last = null;
+      $("sqlatc").innerHTML = "";
       stat.className = "sqlstat bad";
       stat.textContent = (e && e.message) || "The query could not be run.";
       $("sqlres").innerHTML = "";

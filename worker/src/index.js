@@ -8,7 +8,8 @@ import { HttpError } from "./errors.js";
 import { HubSpotError } from "./hubspot.js";
 import { SqlError, runSql } from "./sql.js";
 import { walkAuto } from "./walk.js";
-import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh, tombstones } from "./api.js";
+import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh, tombstones, companiesOf } from "./api.js";
+import { listFindings, runFinding } from "./findings.js";
 import { handleHook } from "./hooks.js";
 import { tick, syncStatus } from "./sync.js";
 import { WS_PROTOCOL } from "./hub.js";
@@ -128,6 +129,9 @@ async function route(req, env, ctx){
   }
   if (p === "/api/mesh" && M === "POST"){ const b = await readJson(req, 200000); return json(await segmentMesh(env, b.companyIds)); }
   if (p === "/api/sql" && M === "POST"){ const b = await readJson(req, 30000); return json(await runSql(env, user, b.sql)); }
+  if (p === "/api/findings" && M === "GET") return json(await listFindings(env));
+  if ((m = /^\/api\/findings\/([a-z0-9-]+)$/.exec(p)) && M === "POST"){ const b = await readJson(req, 2000); return json(await runFinding(env, user, m[1], { fresh: !!b.fresh })); }
+  if (p === "/api/companies-of" && M === "POST"){ const b = await readJson(req, 300000); return json(await companiesOf(env, b.keys)); }
   if (p === "/api/sync/status" && M === "GET") return json(await syncStatus(env));
   return failure(404, "not_found", "no such route");
 }

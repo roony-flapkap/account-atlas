@@ -265,6 +265,14 @@
              pending: Array.isArray(m.pending) ? m.pending.map(str).filter(v => /^\d+$/.test(v)).slice(0, 5000) : [],
              linked: intOf(m.linked), outside: intOf(m.outside) };
   }
+  // where a set on the canvas came from, when it is not a HubSpot segment:
+  // a SQL query (run again on refresh) or a finding (asked again)
+  function cleanSource(s){
+    if (!s || typeof s !== "object") return null;
+    if (s.kind === "sql" && typeof s.sql === "string" && s.sql.trim()) return { kind: "sql", sql: s.sql.slice(0, 20000) };
+    if (s.kind === "finding" && /^[a-z0-9-]{1,40}$/.test(String(s.id || ""))) return { kind: "finding", id: s.id };
+    return null;
+  }
   // A segment is a meta document plus parts, each part under the size a
   // document may be. The members' parts (~p) are written on import and on
   // refresh; the mesh's (~m) as it runs, so a stopped mesh keeps its work.
@@ -278,7 +286,7 @@
       const seg = { id: d.listId, name: str(d.name) || "Segment " + d.listId, type: d.type, size: intOf(d.size), live: !!d.live,
                     importedAt: str(d.importedAt) || null, refreshedAt: str(d.refreshedAt) || null, capped: !!d.capped,
                     parts: intOf(d.parts), meshParts: intOf(d.meshParts), mesh: cleanMesh(d.mesh), members: [], traced: intOf(d.traced),
-                    meshNodes: new Set(), meshEdges: new Set() };
+                    source: cleanSource(d.source), meshNodes: new Set(), meshEdges: new Set() };
       const apply = (part, at, isMember) => {
         if (!part || typeof part !== "object") return;
         (Array.isArray(part.nodes) ? part.nodes : []).forEach(r => {
@@ -333,7 +341,7 @@
     const body = { listId: seg.id, name: seg.name, type: seg.type, size: seg.size, live: !!seg.live,
                    importedAt: seg.importedAt, refreshedAt: seg.refreshedAt || null, capped: !!seg.capped,
                    parts: seg.parts || 0, meshParts: seg.meshParts || 0, mesh: seg.mesh || null,
-                   count: seg.members.length, traced: seg.traced || 0 };
+                   count: seg.members.length, traced: seg.traced || 0, source: seg.source || null };
     await steady(() => segmentsCol(db, CV.cur).doc(segDocId(seg.id)).set(body));
   }
   async function deleteSegmentDocs(seg){

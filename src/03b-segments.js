@@ -113,8 +113,28 @@
     renderRoster(); paintDbChip();
   }
 
+  // Record keys anywhere in a result: a cell may hold one, or several
+  // separated by spaces (a finding's rows, a group_concat).
+  const KEY_RE = /^0-(1|2|3|136)\/\d+$/;
+  function keysIn(rows){
+    const out = new Set();
+    (rows || []).forEach(row => (Array.isArray(row) ? row : [row]).forEach(v => {
+      if (v == null) return;
+      String(v).split(/[\s,]+/).forEach(t => { if (KEY_RE.test(t)) out.add(t); });
+    }));
+    return [...out];
+  }
+  // A set's records, asked again: its query run again, or its finding asked afresh.
+  async function setKeys(source){
+    if (source.kind === "sql"){ const r = await api("/api/sql", { sql: source.sql }); return keysIn(r.rows); }
+    const r = await api("/api/findings/" + encodeURIComponent(source.id), { fresh: true });
+    return keysIn((r.rows || []).map(x => x.keys));
+  }
+
   // DROP IN — or, for a segment already here, REFRESH: members read again,
-  // who joined is added, who left is taken off.
+  // who joined is added, who left is taken off. A set from the SQL console or
+  // a finding (meta.source) takes its members from there instead of HubSpot:
+  // the companies its records are on.
   async function segDropIn(meta){
     if (!(await segReady())) return { ok: false, why: "busy" };
     const K = SEGKIND[meta.type];
@@ -125,7 +145,13 @@
       segLog(job, (had ? "Reading the members again · " : "Reading members · ") + "<b>" + esc(meta.name) + "</b>");
       const found = new Map();
       let members = 0, traced = 0, after = null;
-      do {
+      if (meta.source){
+        const keys = meta.keys || await setKeys(meta.source);
+        const r = await api("/api/companies-of", { keys });
+        ((r && r.companies) || []).forEach(c => { if (c && c.id && !c.deleted) found.set(String(c.id), c); });
+        members = keys.length; traced = keys.length - ((r && r.from && r.from.companies) || 0);
+        job.n = members; job.of = members; job.note = fmt(found.size) + " " + plural(found.size, "company", "companies"); segEmit();
+      } else do {
         if (job.stop) break;
         const r = await api("/api/segments/" + encodeURIComponent(meta.id) + "/members", { type: meta.type, after });
         members += Number(r.members) || 0; traced += Number(r.traced) || 0;
@@ -138,16 +164,19 @@
       if (job.stop && after){ segLog(job, "Stopped before the members were all read · nothing was imported", "err"); return (result = { ok: false, why: "stopped" }); }
       const total = Math.max(meta.size || 0, members);
       const capped = !!after;
-      segLog(job, "<b>" + fmt(members) + "</b> " + (members === 1 ? K.one : K.many) +
-                  (capped ? " · the first " + fmt(members) + " of " + fmt(total) : ""), capped ? "warn" : "");
-      if (meta.type !== "0-2") segLog(job, "<b>" + fmt(found.size) + "</b> " + plural(found.size, "company", "companies") + " on them");
+      if (meta.source) segLog(job, "<b>" + fmt(members) + "</b> " + plural(members, "record") + " · on <b>" + fmt(found.size) + "</b> " + plural(found.size, "company", "companies"));
+      else {
+        segLog(job, "<b>" + fmt(members) + "</b> " + (members === 1 ? K.one : K.many) +
+                    (capped ? " · the first " + fmt(members) + " of " + fmt(total) : ""), capped ? "warn" : "");
+        if (meta.type !== "0-2") segLog(job, "<b>" + fmt(found.size) + "</b> " + plural(found.size, "company", "companies") + " on them");
+      }
       const companies = [...found.values()];
       const at = new Date().toISOString();
       const seg = had || { id: meta.id, parts: 0, meshParts: 0, mesh: null, meshNodes: new Set(), meshEdges: new Set(), members: [] };
       const before = new Set(seg.members);
-      Object.assign(seg, { name: meta.name, type: meta.type, size: total, live: !!meta.live, capped,
+      Object.assign(seg, { name: meta.name, type: meta.type, size: meta.source ? found.size : total, live: !!meta.live, capped,
                            importedAt: seg.importedAt || at, refreshedAt: had ? at : null,
-                           traced: meta.type === "0-2" ? 0 : traced, members: [] });
+                           traced: meta.type === "0-2" && !meta.source ? 0 : traced, members: [], source: meta.source || seg.source || null });
       companies.forEach(c => {
         const n = mergeNode(dStub(c), at);
         uniqPush(n.segs, seg.id); uniqPush(seg.members, n.key);

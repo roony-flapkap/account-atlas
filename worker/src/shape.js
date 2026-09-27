@@ -149,7 +149,9 @@ export function dFromRow(r, L){
 export function toRow(t, x){
   const p = x.properties || {};
   const tails = [...new Set((t === T.contact ? [p.phone, p.mobilephone] : t === T.company ? [p.phone] : []).map(phoneTail).filter(Boolean))];
-  const label = t === T.company ? p.name : t === T.contact ? contactName(x) : t === T.deal ? p.dealname : p.hs_lead_name;
+  // a contact is labelled by name only: the copy keeps no email addresses
+  const label = t === T.company ? p.name : t === T.contact ? (((p.firstname || "") + " " + (p.lastname || "")).trim() || null)
+              : t === T.deal ? p.dealname : p.hs_lead_name;
   return {
     key: recKey(t, x.id), type: t, label: label || null,
     sub: t === T.company ? (p.domain || null) : t === T.contact ? (p.hs_object_source_label || null) : null,

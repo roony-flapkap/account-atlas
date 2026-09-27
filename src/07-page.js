@@ -377,7 +377,7 @@
           const bits = [fmt(st.members) + " " + (st.members === 1 ? "company" : "companies"), fmt(st.walked) + " walked", fmt(st.linked) + " linked",
                         sg.mesh && sg.mesh.pending.length ? fmt(sg.mesh.pending.length) + " people to trace" : null].filter(Boolean);
           return '<div class="cvrow sgrow" data-sgid="' + esc(sg.id) + '" data-mine="1"><span class="cvname"><button type="button" class="cvopen" data-sg="open">' +
-                 esc(sg.name) + '</button></span><span class="cvtag">' + esc(TYPEWORD[sg.type]) + '</span><span class="cvmeta">' + esc(bits.join(" · ")) +
+                 esc(sg.name) + '</button></span><span class="cvtag">' + esc(setWord(sg)) + '</span><span class="cvmeta">' + esc(bits.join(" · ")) +
                  '</span><span class="cvacts"><button type="button" class="act" data-sg="open">Open</button></span></div>';
         }).join("")
       : "";
@@ -398,7 +398,7 @@
   // once a segment is on the canvas, its last read is the better word on its name and size
   function selMeta(){
     const s = SGS.sel, m = s && MAP.segments[s.id];
-    return s ? (m ? Object.assign({}, s, { name: m.name, size: m.size || s.size, live: m.live }) : s) : null;
+    return s ? (m ? Object.assign({}, s, { name: m.name, size: m.size || s.size, live: m.live, source: m.source || s.source || null }) : s) : null;
   }
   function paintSegDetail(){
     const meta = selMeta(), host = $("sgdetail");
@@ -413,7 +413,8 @@
     let steps = "";
     // 1 · drop in / refresh
     steps += '<div class="sgstep"><span class="sgn">1</span><div class="sgsd"><b>' + (seg ? "Refresh the members" : "Drop in") + "</b><span>" +
-      (seg ? "Read the segment again: who joined is added, who left is taken off." + (seg.refreshedAt || seg.importedAt ? " Last read " + esc(ago(seg.refreshedAt || seg.importedAt)) + "." : "")
+      (seg ? (meta.source ? (meta.source.kind === "sql" ? "Run the query again" : "Ask the finding again") : "Read the segment again") +
+             ": who joined is added, who left is taken off." + (seg.refreshedAt || seg.importedAt ? " Last read " + esc(ago(seg.refreshedAt || seg.importedAt)) + "." : "")
            : "Its " + (meta.type === "0-2" ? "companies" : "members’ companies") + " land in a field under the map, not walked yet." +
              (tooBig ? " Only the first " + fmt(SEGCAP) + " of " + fmt(meta.size) + " are read." : "")) +
       "</span></div>" + btn("drop", seg ? "Refresh" : "Drop in", reads(segCost(meta, "drop")), meta.size > 0) + "</div>";
@@ -456,10 +457,13 @@
     const other = SEGJOB && !mineRunning ? '<p class="cvnone">A run on “' + esc(SEGJOB.seg.name) + "” is in progress. Actions here wait for it.</p>" : "";
     host.innerHTML =
       '<button type="button" class="act sgback" data-sg="back">‹ All segments</button>' +
-      '<div class="sghead"><h3>' + esc(meta.name) + '</h3><span class="cvtag">' + esc(TYPEWORD[meta.type]) + "</span></div>" +
-      '<p class="sgmeta">' + fmt(meta.size) + " " + plural(meta.size, "member") + " in HubSpot · " + (meta.live ? "live — it updates itself" : "static") +
-        (meta.updated ? " · updated " + esc(ago(meta.updated)) : "") +
-        ' · <a href="' + esc(segUrl(meta.id)) + '" target="_blank" rel="noopener noreferrer">Open in HubSpot</a></p>' +
+      '<div class="sghead"><h3>' + esc(meta.name) + '</h3><span class="cvtag">' + esc(setWord(meta)) + "</span></div>" +
+      (meta.source
+        ? '<p class="sgmeta">' + fmt(meta.size) + " " + plural(meta.size, "company", "companies") + " · " +
+          (meta.source.kind === "sql" ? "from the SQL console" : "from the finding “" + esc(findingTitle(meta.source.id)) + "”") + "</p>"
+        : '<p class="sgmeta">' + fmt(meta.size) + " " + plural(meta.size, "member") + " in HubSpot · " + (meta.live ? "live — it updates itself" : "static") +
+          (meta.updated ? " · updated " + esc(ago(meta.updated)) : "") +
+          ' · <a href="' + esc(segUrl(meta.id)) + '" target="_blank" rel="noopener noreferrer">Open in HubSpot</a></p>') +
       stats + other + '<div class="sgsteps">' + steps + "</div>" + jobHtml +
       (seg ? '<div class="sgfoot">' + btn("remove", "Remove from this canvas", null, true) +
              '<span>Its field goes. Accounts walked from it stay on the canvas.</span></div>' : "");
@@ -486,7 +490,7 @@
       const row = b.closest("[data-sgid]"), id = row && row.getAttribute("data-sgid");
       const hit = SGS.rows.find(r => r.id === id) || (MAP.segments[id] && Object.assign({ updated: null }, MAP.segments[id]));
       if (!hit) return;
-      SGS.sel = { id: hit.id, name: hit.name, type: hit.type, size: hit.size, live: hit.live, updated: hit.updated || null };
+      SGS.sel = { id: hit.id, name: hit.name, type: hit.type, size: hit.size, live: hit.live, updated: hit.updated || null, source: hit.source || null };
       SGS.view = "detail"; SGS.arm = null; sgNote(""); paintSegPanel();
       return;
     }

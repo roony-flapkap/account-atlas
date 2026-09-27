@@ -12,6 +12,7 @@
     PORTAL = String(me.portal || "");
     OPERATOR = String(me.user.name || me.user.email || "—").toUpperCase();
     mountChrome(me);
+    mountFindings();
     logReset();
     const sR = logStep("RESTORE CANVAS FROM STORE");
     // how full the SQL copy is; the map does not wait for it
