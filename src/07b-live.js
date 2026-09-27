@@ -139,6 +139,57 @@
     } catch(e){}
   }
 
+  /* ---------------- after a walk from the copy ----------------
+     The copy is kept current by HubSpot's webhooks and the Worker's reads,
+     but a walk drawn from it is checked against HubSpot anyway, quietly,
+     one account at a time. Whatever differs is merged and saved; what went
+     away shows through the change feed (struck through, faded). A check
+     never writes into a canvas the reader has since left, nor an account
+     taken off the map, and it waits while a walk or a run holds the lock. */
+  const BG = { queue: [], running: false };
+  function backgroundCheck(cid){
+    cid = String(cid);
+    if (BG.queue.indexOf(cid) < 0) BG.queue.push(cid);
+    if (!BG.running) runChecks();
+  }
+  async function runChecks(){
+    BG.running = true;
+    try {
+      while (BG.queue.length){
+        if (ACQUIRING){ await sleep(1500); continue; }
+        const cid = BG.queue.shift();
+        if (!MAP.accounts[cid]) continue;
+        const name = MAP.accounts[cid].name || "company " + cid;
+        const chip = $("chipHsTxt");
+        if (chip) chip.textContent = "HubSpot · checking " + trunc(name, 28) + "…";
+        try {
+          const res = await walkCore(cid, QUIET_R, { mode: "live", canvas: CV.cur, onlyIfKept: true });
+          if (res.ok){
+            // what left the account leaves the map too, unless something else is rebuilding it
+            if (res.changes && !ACQUIRING){ await rebuildFromStore(); reapplyLinkMarks(); markTombstones(); }
+            reindex(); VIEW.refresh(); renderRoster();
+          }
+        } catch(e){}
+      }
+    } finally { BG.running = false; paintHsChip(); }
+  }
+
+  // A record's details (email, phone …) when it was drawn from the copy,
+  // which keeps none: read from HubSpot the first time it is opened.
+  const FACTS_ASKED = new Set();
+  async function fetchFacts(n){
+    if (!n || FACTS_ASKED.has(n.key)) return;
+    FACTS_ASKED.add(n.key);
+    try {
+      const r = await api("/api/records", { keys: [n.key] });
+      const d = (r.records || [])[0];
+      const m = MAP.byKey[n.key];
+      // the record keeps what the map made of it (an unattached one stays unattached)
+      if (d && m){ mergeNode(Object.assign({}, d, { kd: m.kind, hh: null }), new Date().toISOString()); VIEW.refresh(); }
+      else if (!d && m && (r.missing || []).indexOf(n.key) >= 0 && !m.gone){ m.gone = { kind: "deleted", at: null, other: null }; VIEW.refresh(); }
+    } catch(e){ FACTS_ASKED.delete(n.key); }
+  }
+
   /* ---------------- the chips and panels ---------------- */
   function mountChrome(me){
     const chips = document.querySelector(".chips");
@@ -269,7 +320,7 @@
       await stopExpansions();
       for (let i = 0; i < ids.length; i++){
         note("Re-walking " + (MAP.accounts[ids[i]].name || "company " + ids[i]) + " · " + (i + 1) + " of " + ids.length);
-        try { const r = await walkCore(ids[i], QUIET_R); if (r.ok) ok++; else failed++; CH.pending.delete(ids[i]); }
+        try { const r = await walkCore(ids[i], QUIET_R, { mode: "live" }); if (r.ok) ok++; else failed++; CH.pending.delete(ids[i]); }
         catch(e){ failed++; if (e && e.code === "no_identity") break; }
       }
       await rebuildFromStore();

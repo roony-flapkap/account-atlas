@@ -183,14 +183,20 @@
   const CONSOLE_R = { step: logStep, ok: stepOk, end: stepEnd, prog, line: logLine };
   const QUIET_R = { step: () => null, ok(){}, end(){}, prog(){}, line(){} };
 
-  // -> { ok, why?, name, touched, shared, saved, missed }; a failure the
-  // walk cannot carry on from THROWS
-  async function walkCore(cid, R){
+  // -> { ok, why?, name, touched, shared, saved, missed, mode, changes }; a
+  // failure the walk cannot carry on from THROWS.
+  // opts.mode: "auto" (from the Worker's copy where it holds the account
+  // whole, live otherwise) or "live" (always HubSpot). opts.canvas: merge
+  // only if that canvas is still the open one — a background walk must never
+  // write into a canvas the reader has since switched to.
+  async function walkCore(cid, R, opts){
+    opts = opts || {};
     const touched = {}, edgeIds = {}, at = new Date().toISOString();
     const handles = new Map();
     let done = null, bad = null;
-    await apiStream("/api/walk", { companyId: String(cid) }, ev => {
-      if (ev.t === "prog") R.prog(ev.pct, ev.label);
+    await apiStream("/api/walk", { companyId: String(cid), mode: opts.mode || "auto" }, ev => {
+      if (ev.t === "mode"){ if (ev.mode === "copy") R.line("LINK &middot; <b>SQL COPY</b> &middot; KEPT CURRENT FROM HUBSPOT &middot; NO HUBSPOT CALLS"); }
+      else if (ev.t === "prog") R.prog(ev.pct, ev.label);
       else if (ev.t === "step") handles.set(ev.id, R.step(esc(ev.m)));
       else if (ev.t === "end") R.end(handles.get(ev.id), esc(ev.note || ""), ev.st === "err" ? true : ev.st === "warn" ? "warn" : false);
       else if (ev.t === "line") R.line(esc(ev.m), ev.cls);
@@ -200,6 +206,8 @@
     if (bad) throw { code: bad.code || "unavailable", message: bad.message };
     if (!done) throw { code: "unavailable", message: "the walk ended without an answer" };
     if (!done.ok) return { ok: false, why: done.why || "That company could not be read." };
+    if (opts.canvas && !sameCanvas(opts.canvas, CV.cur)) return { ok: false, why: "the canvas changed while it was being read" };
+    if (opts.onlyIfKept && !MAP.accounts[String(cid)]) return { ok: false, why: "it was taken off the map meanwhile" };
 
     // ---- merge, by record: a key already here gains edges, not a twin
     R.prog(90, "MERGING INTO THE MAP");
@@ -227,9 +235,10 @@
     const saved = await saveAccount(doc);
     if (saved.ok) R.ok(sW, "KEPT" + (doc.trimmed ? " · TRIMMED" : ""));
     else { R.end(sW, String(saved.why).toUpperCase(), true); R.line("THE MAP COULD NOT BE SAVED &middot; THIS WALK IS ON SCREEN ONLY", "err"); }
-    if (done.stats) R.line("HUBSPOT &middot; <b>" + fmt(done.stats.calls) + "</b> " + plural(done.stats.calls, "CALL") + " &middot; " +
+    if (done.stats) R.line((done.mode === "copy" ? "SQL COPY &middot; " : "HUBSPOT &middot; <b>" + fmt(done.stats.calls) + "</b> " + plural(done.stats.calls, "CALL") + " &middot; ") +
                            fmt(done.stats.ms) + "MS" + (done.changes ? " &middot; <b>" + done.changes + "</b> CHANGED SINCE THE LAST READ" : ""), done.changes ? "err" : "");
-    return { ok: true, name: co.name || "", touched: Object.keys(touched).length, shared: shared.length, saved, missed };
+    return { ok: true, name: co.name || "", touched: Object.keys(touched).length, shared: shared.length, saved, missed,
+             mode: done.mode || "live", changes: Number(done.changes) || 0 };
   }
 
   // The console walk: walkCore, then draw it and travel to it.
@@ -237,8 +246,11 @@
     logLine("TARGET ACQUIRED &middot; <b>" + esc(cid) + "</b>" + (via ? " &middot; " + esc(via).toUpperCase() : ""));
     const hubKey = companyKey(cid);
     try {
-      const res = await walkCore(cid, CONSOLE_R);
+      // a re-walk is a deliberate read of HubSpot; an ordinary walk takes the copy where it can
+      const res = await walkCore(cid, CONSOLE_R, { mode: force ? "live" : "auto" });
       if (!res.ok){ fail(esc(res.why)); return; }
+      // drawn from the copy: HubSpot is asked again quietly, and the map follows if it differs
+      if (res.mode === "copy") setTimeout(() => backgroundCheck(cid), 400);
       // A re-walk rebuilds the map from the store, so records that have
       // since left the account leave the map too; merging alone never
       // removed anything.

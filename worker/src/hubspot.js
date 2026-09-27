@@ -29,12 +29,25 @@ export async function pool(items, width, fn){
 export function hubspotClient(env, opts = {}){
   const gate = env.GATE ? env.GATE.get(env.GATE.idFromName("portal")) : null;
   const stats = { calls: 0, search: 0, retries: 0, waitedMs: 0 };
+  // calls already paid for at the gate, spent before asking it again
+  const credit = { general: 0, search: 0 };
 
   // Reserve n calls of a kind before making them; one round trip to the
   // gate per batch of calls, because every round trip is a subrequest too.
   async function reserve(kind, n){
     if (!gate || !n) return;
+    const take = Math.min(credit[kind] || 0, n);
+    credit[kind] = (credit[kind] || 0) - take;
+    if (n - take <= 0) return;
+    const wait = await gate.reserve(kind, n - take);
+    if (wait > 0){ stats.waitedMs += wait; await sleep(wait); }
+  }
+  // A walk knows roughly what it will spend: paying once up front saves a
+  // round trip to the gate at every step.
+  async function prepay(kind, n){
+    if (!gate || !n) return;
     const wait = await gate.reserve(kind, n);
+    credit[kind] = (credit[kind] || 0) + n;
     if (wait > 0){ stats.waitedMs += wait; await sleep(wait); }
   }
 
@@ -129,5 +142,5 @@ export function hubspotClient(env, opts = {}){
     return { results: (r && r.results) || [], after: r && r.paging && r.paging.next && r.paging.next.after || null };
   }
 
-  return { call, batchRead, assoc, search, listPage, reserve, stats };
+  return { call, batchRead, assoc, search, listPage, reserve, prepay, stats };
 }

@@ -7,7 +7,7 @@ import { StoreError, storeOp } from "./store.js";
 import { HttpError } from "./errors.js";
 import { HubSpotError } from "./hubspot.js";
 import { SqlError, runSql } from "./sql.js";
-import { walk } from "./walk.js";
+import { walkAuto } from "./walk.js";
 import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh, tombstones } from "./api.js";
 import { handleHook } from "./hooks.js";
 import { tick, syncStatus } from "./sync.js";
@@ -111,7 +111,9 @@ async function route(req, env, ctx){
   if (p === "/api/walk" && M === "POST"){
     const b = await readJson(req, 2000);
     if (!/^\d{1,20}$/.test(String(b.companyId || ""))) throw new HttpError(400, "bad_input", "a company id is digits");
-    return streamed(ctx, say => walk(env, b.companyId, say, { user }));
+    // auto: from the copy where it holds the account whole, live otherwise; live: always HubSpot
+    const mode = b.mode === "live" ? "live" : "auto";
+    return streamed(ctx, say => walkAuto(env, b.companyId, say, { user, mode }));
   }
   if (p === "/api/resolve" && M === "POST") return json(await resolve(env, await readJson(req, 2000)));
   if (p === "/api/expand" && M === "POST"){ const b = await readJson(req, 2000); return json(await expand(env, b.key, b.limit)); }

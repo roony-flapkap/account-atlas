@@ -32,17 +32,21 @@ export async function lookups(env, hs, { refresh = false } = {}){
   if (!hs) return memo ? memo.data : EMPTY_LOOKUPS;
   const data = { owners: {}, users: {}, gone: {}, pipeline: {}, dealStage: {}, leadStage: {} };
   const name = o => ((o.firstName || "") + " " + (o.lastName || "")).trim() || o.email || "owner " + o.id;
-  for (const archived of [false, true]){
-    let after = null;
-    do {
-      const r = await hs.call("GET", "/crm/v3/owners?limit=500&archived=" + archived + (after ? "&after=" + encodeURIComponent(after) : ""));
-      for (const o of (r && r.results) || []){
-        (archived ? data.gone : data.owners)[o.id] = name(o);
-        if (o.userId != null) data.users[o.userId] = name(o);
-      }
-      after = r && r.paging && r.paging.next && r.paging.next.after;
-    } while (after);
-  }
+  // names are a nicety: if HubSpot will not give them (a scope missing, say),
+  // records show owner ids and the walk goes on
+  try {
+    for (const archived of [false, true]){
+      let after = null;
+      do {
+        const r = await hs.call("GET", "/crm/v3/owners?limit=500&archived=" + archived + (after ? "&after=" + encodeURIComponent(after) : ""));
+        for (const o of (r && r.results) || []){
+          (archived ? data.gone : data.owners)[o.id] = name(o);
+          if (o.userId != null) data.users[o.userId] = name(o);
+        }
+        after = r && r.paging && r.paging.next && r.paging.next.after;
+      } while (after);
+    }
+  } catch(e){ console.warn("owner names unavailable: " + (e && e.message)); }
   for (const [type, into] of [["deals", "dealStage"], [T.lead, "leadStage"]]){
     try {
       const r = await hs.call("GET", "/crm/v3/pipelines/" + type);
@@ -129,12 +133,15 @@ export function shapeRecord(t, x, L){
 }
 export const shapeOf = { [T.company]: dCompany, [T.contact]: dContact, [T.deal]: dDeal, [T.lead]: dLead };
 
-// A record from the SQL copy alone (no live read): enough to draw it.
+// A record from the SQL copy alone (no live read): enough to draw it. No
+// facts: the copy keeps no emails or phone numbers, so the page reads a
+// record's details from HubSpot when it is opened.
 export function dFromRow(r, L){
   const [t, id] = r.key.split("/");
   const kd = { [T.company]: "company", [T.contact]: "contact", [T.deal]: "deal", [T.lead]: "lead" }[t];
   const N = namer(L);
-  return { k: r.key, kd, id, t, l: r.label || (kd === "company" ? "Company " : "Record ") + id, s: r.sub || "",
+  const s = kd === "deal" ? (aed(r.amount) || "") : kd === "lead" ? "" : (r.sub || "");
+  return { k: r.key, kd, id, t, l: r.label || (kd === "company" ? "Company " : kd === "contact" ? "Contact " : kd === "deal" ? "Deal " : "Lead ") + id, s,
            c: r.created_at || null, o: N.owner(r.owner_id), cr: N.maker(r.creator_id), ci: [], hh: kd === "company" ? r.key : null, f: [] };
 }
 

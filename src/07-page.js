@@ -6,6 +6,7 @@
   const VIEW = createView($("atlas"), {
     viewChanged: scheduleViewSave,
     expanded: (node, r) => saveExpansion(node, r),
+    needFacts: n => fetchFacts(n),
     fileTag: () => CV.cur ? slug(CV.cur.name) : ""
   });
 

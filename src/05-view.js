@@ -441,6 +441,8 @@
       const n = SEL && MAP.byKey[SEL];
       // the content stays on the way out, so it does not empty mid-slide
       if (!n){ insp.classList.remove("on"); return; }
+      // drawn from the copy, which keeps no emails or phones: ask for them once
+      if (!n.e.facts.length && HOOKS.needFacts) HOOKS.needFacts(n);
       const link = (k, label) => '<button type="button" class="ilink" data-goto="' + esc(k) + '" style="--lnk:' + nodeColour(k) + '">' + esc(label) + "</button>";
       let rows = n.e.facts.map(f => '<div class="irow"><span class="il">' + esc(f[0]) + '</span><span class="iv2">' + esc(f[1]) + "</span></div>").join("");
       if (n.e.created) rows += '<div class="irow"><span class="il">Created</span><span class="iv2">' + esc(dstr(when(n.e.created))) + " UTC</span></div>";
