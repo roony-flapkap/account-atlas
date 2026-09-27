@@ -8,34 +8,52 @@ import { addUsage, usageToday } from "./sync.js";
 import { SqlError } from "./sql.js";
 
 const TTL_MS = 60 * 60000;
-// the duplicate findings read ~800,000 rows a run on the live copy (D1 counts
-// its own working tables too): kept longer, and asked again at most this often
-const HEAVY_TTL_MS = 6 * 60 * 60000;
-const HEAVY_GAP_MS = 15 * 60000;
 const MAX_ROWS = 500;
+
+// The duplicate pairs are costly to work out (~800,000 rows read: D1 counts
+// its own working tables too), so they are worked out once a night into
+// dup_company_pairs / dup_contact_pairs, and the findings read those.
+const PAIRS = {
+  "0-2": { table: "dup_company_pairs", view: "duplicate_pairs",
+           cols: "a, b, a_label, b_label, same_name, same_sound, same_domain, same_phone, shared_people, same_owner, created_close, score" },
+  "0-1": { table: "dup_contact_pairs", view: "contact_duplicate_pairs",
+           cols: "a, b, a_label, b_label, same_name, same_sound, same_phone, same_company, same_owner, score" }
+};
+export async function rebuildPairs(env, t){
+  const p = PAIRS[t];
+  const res = await env.GRAPH.batch([
+    env.GRAPH.prepare("DELETE FROM " + p.table),
+    env.GRAPH.prepare("INSERT INTO " + p.table + " (" + p.cols + ") SELECT " + p.cols + " FROM " + p.view + " WHERE score >= 4")
+  ]);
+  const sum = k => res.reduce((s, r) => s + (Number(r && r.meta && r.meta[k]) || 0), 0);
+  return { rows: Number(res[1].meta && res[1].meta.changes) || 0, read: sum("rows_read"), written: sum("rows_written") };
+}
 const JUNK_TAILS = "('000000000','111111111','222222222','123456789','987654321','999999999','012345678')";
 const COMPANY = "'0-2/' AND %s < '0-20'", CONTACT = "'0-1/' AND %s < '0-10'", DEAL = "'0-3/' AND %s < '0-30'", LEAD = "'0-136/' AND %s < '0-1360'";
 const range = (col, r) => col + " >= " + r.replace("%s", col);
 
 const PEOPLE_AND_COMPANIES = ["backfill:0-1", "links:0-2>0-1"];
 export const FINDINGS = [
-  { id: "dup-companies", group: "Duplicates", title: "Smart duplicate companies", heavy: true,
-    blurb: "Pairs that look like one business: a name that cleans up or sounds the same, the same website, the same number, people in common, the same owner, created days apart. Two signals at least; strongest first.",
+  { id: "dup-companies", group: "Duplicates", title: "Smart duplicate companies", pairs: "0-2",
+    blurb: "Pairs that look like one business: a name that cleans up or sounds the same, the same website, the same number, people in common, the same owner, created days apart. Two signals at least; strongest first. Worked out each night.",
     needs: ["backfill:0-2"],
-    sql: "SELECT a || ' ' || b AS keys, a_label || '  ↔  ' || b_label AS label, " +
-         "trim((CASE WHEN same_name THEN 'same name · ' WHEN same_sound THEN 'sounds alike · ' ELSE '' END) || " +
-         "(CASE WHEN same_domain THEN 'same website · ' ELSE '' END) || (CASE WHEN same_phone THEN 'same number · ' ELSE '' END) || " +
-         "(CASE WHEN shared_people > 0 THEN shared_people || (CASE WHEN shared_people = 1 THEN ' person' ELSE ' people' END) || ' in common · ' ELSE '' END) || " +
-         "(CASE WHEN same_owner THEN 'same owner · ' ELSE '' END) || (CASE WHEN created_close THEN 'created within 2 days' ELSE '' END), ' ·') AS detail, score " +
-         "FROM duplicate_pairs WHERE score >= 4 ORDER BY score DESC, a LIMIT " + MAX_ROWS },
-  { id: "dup-contacts", group: "Duplicates", title: "Smart duplicate contacts", heavy: true,
-    blurb: "One person entered twice: the same or a sound-alike name, with the same number or on the same company.",
+    sql: "SELECT p.a || ' ' || p.b AS keys, p.a_label || '  ↔  ' || p.b_label AS label, " +
+         "trim((CASE WHEN p.same_name THEN 'same name · ' WHEN p.same_sound THEN 'sounds alike · ' ELSE '' END) || " +
+         "(CASE WHEN p.same_domain THEN 'same website · ' ELSE '' END) || (CASE WHEN p.same_phone THEN 'same number · ' ELSE '' END) || " +
+         "(CASE WHEN p.shared_people > 0 THEN p.shared_people || (CASE WHEN p.shared_people = 1 THEN ' person' ELSE ' people' END) || ' in common · ' ELSE '' END) || " +
+         "(CASE WHEN p.same_owner THEN 'same owner · ' ELSE '' END) || (CASE WHEN p.created_close THEN 'created within 2 days' ELSE '' END), ' ·') AS detail, p.score AS score " +
+         // a pair one of whose records has since been deleted or merged is left out
+         "FROM dup_company_pairs p JOIN records r1 ON r1.key = p.a AND r1.deleted_at IS NULL JOIN records r2 ON r2.key = p.b AND r2.deleted_at IS NULL " +
+         "ORDER BY p.score DESC, p.a LIMIT " + MAX_ROWS },
+  { id: "dup-contacts", group: "Duplicates", title: "Smart duplicate contacts", pairs: "0-1",
+    blurb: "One person entered twice: the same or a sound-alike name, with the same number or on the same company. Worked out each night.",
     needs: PEOPLE_AND_COMPANIES,
-    sql: "SELECT a || ' ' || b AS keys, a_label || '  ↔  ' || b_label AS label, " +
-         "trim((CASE WHEN same_name THEN 'same name · ' WHEN same_sound THEN 'sounds alike · ' ELSE '' END) || " +
-         "(CASE WHEN same_phone THEN 'same number · ' ELSE '' END) || (CASE WHEN same_company THEN 'same company · ' ELSE '' END) || " +
-         "(CASE WHEN same_owner THEN 'same owner' ELSE '' END), ' ·') AS detail, score " +
-         "FROM contact_duplicate_pairs WHERE score >= 4 ORDER BY score DESC, a LIMIT " + MAX_ROWS },
+    sql: "SELECT p.a || ' ' || p.b AS keys, p.a_label || '  ↔  ' || p.b_label AS label, " +
+         "trim((CASE WHEN p.same_name THEN 'same name · ' WHEN p.same_sound THEN 'sounds alike · ' ELSE '' END) || " +
+         "(CASE WHEN p.same_phone THEN 'same number · ' ELSE '' END) || (CASE WHEN p.same_company THEN 'same company · ' ELSE '' END) || " +
+         "(CASE WHEN p.same_owner THEN 'same owner' ELSE '' END), ' ·') AS detail, p.score AS score " +
+         "FROM dup_contact_pairs p JOIN records r1 ON r1.key = p.a AND r1.deleted_at IS NULL JOIN records r2 ON r2.key = p.b AND r2.deleted_at IS NULL " +
+         "ORDER BY p.score DESC, p.a LIMIT " + MAX_ROWS },
   { id: "shared-numbers", group: "Hidden links", title: "One number, many companies",
     blurb: "A phone number on three or more companies, or five or more records: an agent, an accountant, a typing office — or one owner behind several businesses.",
     needs: ["backfill:0-2", "backfill:0-1"],
@@ -127,9 +145,15 @@ export async function runFinding(env, user, id, { fresh = false } = {}){
   const waiting = waitingFor(f, jobs);
   const c0 = await cached(env, id);
   const age = c0 ? Date.now() - Date.parse(c0.at) : Infinity;
-  if (!fresh && age < (f.heavy ? HEAVY_TTL_MS : TTL_MS)) return Object.assign(c0, { id, waiting, cached: true });
-  if (fresh && f.heavy && age < HEAVY_GAP_MS)
-    return Object.assign(c0, { id, waiting, cached: true, note: "asked less than 15 minutes ago — this is that answer (each run reads ~800,000 rows)" });
+  if (!fresh && age < TTL_MS) return Object.assign(c0, { id, waiting, cached: true });
+  // the duplicate lists come from the nightly tables: until the first night, there is nothing to read
+  let pairsAt = null;
+  if (f.pairs){
+    const j = await env.GRAPH.prepare("SELECT finished_at FROM sync_state WHERE job = ?1").bind("pairs:" + f.pairs).first();
+    pairsAt = (j && j.finished_at) || null;
+    if (!pairsAt) return { id, waiting, count: 0, more: false, rows: [], at: new Date().toISOString(), cached: false, rowsRead: 0,
+                           note: "the first list is worked out tonight, at 02:00 UTC, and every night after" };
+  }
   const budget = Number(env.SQL_READ_BUDGET) || 1000000;
   const used = (await usageToday(env)).sql_reads;
   if (used >= budget){
@@ -144,6 +168,7 @@ export async function runFinding(env, user, id, { fresh = false } = {}){
   const read = Number(r.meta && r.meta.rows_read) || rows.length;
   await addUsage(env, "sql_reads", read);
   const out = { count: rows.length, more: rows.length >= MAX_ROWS, rows, ms: Date.now() - t0, rowsRead: read };
+  if (pairsAt) out.note = "the pairs were worked out " + pairsAt.slice(0, 16).replace("T", " ") + " UTC";
   const at = new Date().toISOString();
   await env.GRAPH.prepare("INSERT INTO lookups (name, data, at) VALUES (?1, ?2, ?3) ON CONFLICT(name) DO UPDATE SET data = excluded.data, at = excluded.at")
     .bind("finding:" + id, JSON.stringify(out), at).run();

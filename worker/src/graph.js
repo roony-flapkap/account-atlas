@@ -16,9 +16,34 @@ async function inChunks(list, size, fn){ for (let i = 0; i < list.length; i += s
 
 // rows: from shape.toRow. Returns { created, updated, restored, known, changes }.
 // `known` is the set of keys the copy already held before this call.
+// The first fill's own path: no "what is there already?" read first (it
+// cost a row read per record, most of them new). One statement inserts the
+// new rows and rewrites a stored one only if something in it differs; phone
+// endings are added if missing. Nothing is reported: the fill says nothing.
+const SAME = FIELDS.map(f => "records." + f + " IS excluded." + f).join(" AND ");
+async function fillRecords(env, rows, at){
+  const stmts = [];
+  await inChunks(rows, 400, part => { stmts.push(env.GRAPH.prepare(
+    "INSERT INTO records (key, type, label, sub, owner_id, creator_id, stage, pipeline, amount, tails, created_at, hs_updated_at, synced_at, deleted_at) " +
+    "SELECT json_extract(value,'$.key'), json_extract(value,'$.type'), json_extract(value,'$.label'), json_extract(value,'$.sub'), " +
+    "json_extract(value,'$.owner_id'), json_extract(value,'$.creator_id'), json_extract(value,'$.stage'), json_extract(value,'$.pipeline'), " +
+    "json_extract(value,'$.amount'), json_extract(value,'$.tails'), json_extract(value,'$.created_at'), json_extract(value,'$.hs_updated_at'), ?2, NULL " +
+    "FROM json_each(?1) WHERE true " +
+    "ON CONFLICT(key) DO UPDATE SET type = excluded.type, label = excluded.label, sub = excluded.sub, owner_id = excluded.owner_id, " +
+    "creator_id = excluded.creator_id, stage = excluded.stage, pipeline = excluded.pipeline, amount = excluded.amount, tails = excluded.tails, " +
+    "created_at = excluded.created_at, hs_updated_at = excluded.hs_updated_at, synced_at = excluded.synced_at, deleted_at = NULL, merged_into = NULL " +
+    "WHERE NOT (" + SAME + ") OR records.deleted_at IS NOT NULL"
+  ).bind(J(part), at)); });
+  const tails = rows.flatMap(r => (r.tails ? r.tails.split(" ") : []).map(t => [t, r.key]));
+  await inChunks(tails, 800, part => { stmts.push(env.GRAPH.prepare(
+    "INSERT OR IGNORE INTO phones (tail, key) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]') FROM json_each(?1)").bind(J(part))); });
+  return stmts.length ? written(await env.GRAPH.batch(stmts)) : 0;
+}
+
 export async function applyRecords(env, rows, { source, emit = true, at = now() } = {}){
   const out = { created: [], updated: [], restored: [], known: new Set(), changes: [], writes: 0 };
   if (!rows.length) return out;
+  if (source === "backfill" && !emit){ out.writes = await fillRecords(env, rows, at); return out; }
   const byKey = new Map(rows.map(r => [r.key, r]));
   const before = new Map();
   await inChunks([...byKey.keys()], 500, async keys => {
@@ -86,6 +111,25 @@ const written = results => results.reduce((s, r) => s + (Number(r && r.meta && r
 export async function applyLinks(env, sets, { source, emit = true, track = source !== "backfill", at = now() } = {}){
   const out = { added: 0, removed: 0, changes: [], writes: 0 };
   if (!sets.length) return out;
+  // The first fill's own path: every link in, both ways, where it is not
+  // already — no read of what is there, nothing reported, nothing removed
+  // (the nightly re-read compares and removes, and says so).
+  if (!emit && !track){
+    const add = [];
+    for (const s of sets) for (const x of s.to){
+      add.push([s.from, x.key, x.typeId ?? null, x.label ?? null], [x.key, s.from, x.typeId ?? null, x.label ?? null]);
+    }
+    const stmts = [];
+    await inChunks(add, 800, part => stmts.push(env.GRAPH.prepare(
+      "INSERT OR IGNORE INTO links (a, b, type_id, label, synced_at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), " +
+      "json_extract(value,'$[2]'), json_extract(value,'$[3]'), ?2 FROM json_each(?1)").bind(J(part), at)));
+    if (stmts.length){
+      const res = await env.GRAPH.batch(stmts);
+      out.writes = written(res);
+      out.added = res.reduce((s, r) => s + (Number(r && r.meta && r.meta.changes) || 0), 0) / 2;
+    }
+    return out;
+  }
   const complete = new Set();
   if (emit){
     const types = [...new Set(sets.map(s => s.from.split("/")[0] + ">" + s.toType))];

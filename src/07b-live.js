@@ -216,8 +216,10 @@
       '<div id="sqlpanel" class="cvp" hidden><div class="cvbox frame sqlbox" role="dialog" aria-modal="true" aria-labelledby="sqltitle">' +
         '<div class="cvhead"><h2 id="sqltitle">SQL console</h2><button type="button" class="act" data-sq="close">Close</button></div>' +
         '<p class="cvlede">Read-only SQL against the Worker\'s copy of the CRM: <b>records</b>, <b>links</b> (both directions), <b>phones</b>, ' +
-          '<b>changes</b>, <b>segments</b>, <b>segment_members</b>, <b>sync_state</b> — and the views <b>company_keys</b>, <b>contact_keys</b> (cleaned and sound-alike names), ' +
-          '<b>duplicate_pairs</b>, <b>contact_duplicate_pairs</b> (with a score and the evidence) and <b>shared_numbers</b>. One SELECT at a time, 1,000 rows at most, logged. ' +
+          '<b>changes</b>, <b>segments</b>, <b>segment_members</b>, <b>sync_state</b>; the duplicate pairs worked out each night, <b>dup_company_pairs</b> and ' +
+          '<b>dup_contact_pairs</b> (with a score and the evidence — cheap to read); and the views <b>company_keys</b>, <b>contact_keys</b> (cleaned and sound-alike names) ' +
+          'and <b>shared_numbers</b>. The live views <b>duplicate_pairs</b> and <b>contact_duplicate_pairs</b> work the pairs out afresh, and read ~800,000 rows each time. ' +
+          'One SELECT at a time, 1,000 rows at most, logged. ' +
           'Any records in a result can be added to a canvas. ' +
           'Canvases are not in it. Keys read <b>0-2/…</b> company · <b>0-1/…</b> contact · <b>0-3/…</b> deal · <b>0-136/…</b> lead. Ctrl+Enter runs.</p>' +
         '<div class="sqlex" id="sqlex"></div>' +
@@ -341,7 +343,7 @@
   const SQL_EXAMPLES = [
     { label: "Smart duplicates", sql:
       "SELECT a, b, a_label, b_label, score, same_name, same_sound, same_domain, same_phone, shared_people, same_owner, created_close\n" +
-      "FROM duplicate_pairs\nWHERE score >= 4\nORDER BY score DESC\nLIMIT 200" },
+      "FROM dup_company_pairs\nORDER BY score DESC\nLIMIT 200" },
     { label: "One number, many companies", sql:
       "SELECT tail, companies, contacts, keys\nFROM shared_numbers\nWHERE NOT junk AND companies >= 3\nORDER BY records DESC\nLIMIT 100" },
     { label: "People on 2+ companies", sql:

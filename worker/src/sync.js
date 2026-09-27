@@ -14,7 +14,10 @@ import { hubspotClient, T } from "./hubspot.js";
 import { ASKFOR, toRow, recKey } from "./shape.js";
 import { applyRecords, applyLinks, applyDeletions, recordChanges, typeRange } from "./graph.js";
 import { announce } from "./hub.js";
+import { rebuildPairs } from "./findings.js";
 
+// worked out first thing each night, ahead of the fill: the duplicate pairs
+const PAIR_JOBS = ["pairs:0-2", "pairs:0-1"];
 const ORDER = [
   "backfill:0-2", "backfill:0-1", "backfill:0-3", "backfill:0-136",
   "links:0-2>0-1", "links:0-2>0-3", "links:0-2>0-136", "links:0-1>0-3", "links:0-1>0-136", "links:0-136>0-3"
@@ -79,9 +82,10 @@ export async function tick(env, { now = Date.now(), nightly = false } = {}){
     const used = await usageToday(env);
     if (used.sync_writes >= budget){ report.did.push("write budget spent for today (" + used.sync_writes + ")"); return report; }
 
-    for (const name of ORDER.concat(NIGHTLY)){
+    for (const name of PAIR_JOBS.concat(ORDER, NIGHTLY)){
       const j = await job(env, name);
-      if (j.status === "done" || (name.startsWith("relink") || name.startsWith("exists")) && j.status !== "queued" && j.status !== "running") continue;
+      const onDemand = name.startsWith("relink") || name.startsWith("exists") || name.startsWith("pairs");
+      if (j.status === "done" || onDemand && j.status !== "queued" && j.status !== "running") continue;
       if (name.startsWith("links:") && !(await ready(env, name))) continue;
       const res = await slice(env, hs, j);
       await addUsage(env, "sync_writes", res.writes || 0);
@@ -106,6 +110,12 @@ async function slice(env, hs, j){
     if (kind === "backfill") res = await backfillSlice(env, hs, j, spec);
     else if (kind === "links" || kind === "relink") res = await linkSlice(env, hs, j, spec, kind === "relink");
     else if (kind === "exists") res = await existsSlice(env, hs, j, spec);
+    else if (kind === "pairs"){
+      const r = await rebuildPairs(env, spec);
+      j.status = "done"; j.finished_at = new Date().toISOString(); j.cursor = null;
+      j.detail = JSON.stringify({ pairs: r.rows, read: r.read });
+      res = { note: r.rows + " duplicate pairs, " + r.read + " rows read", writes: r.written };
+    }
     await saveJob(env, j);
     return res;
   } catch(e){
@@ -210,6 +220,12 @@ async function pollChanges(env, hs, poll){
 }
 
 async function startNightly(env){
+  // the duplicate pairs every night, with whatever the copy holds by then
+  for (const name of PAIR_JOBS){
+    const j = await job(env, name);
+    j.status = "queued"; j.started_at = new Date().toISOString(); j.error = null;
+    await saveJob(env, j);
+  }
   for (const name of NIGHTLY){
     const j = await job(env, name);
     // a re-read waits until the first fill of those links is complete
