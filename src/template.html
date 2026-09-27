@@ -1,0 +1,854 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"></head><body>
+<title>Account Atlas</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* =====================================================================
+     ACCOUNT ATLAS — one accumulating map of the portal.
+     Search a company, it is walked, drawn and KEPT. Search one already on
+     the map and the view travels to it rather than walking it again.
+     The engine is the Account X-Ray's, re-keyed: a node is keyed by the
+     RECORD it is, so a contact on two companies is one node with an edge
+     to each — which is the whole point of the map.
+     ===================================================================== */
+  :root{
+    color-scheme:dark;
+    --void:#07070A;
+    --panel:#0D0E11;
+    --panel-2:#131418;
+    --rule:#23252B;
+    /* ---- THE ACCENT, DECLARED ONCE ----
+       FlapKap's two brand colours, given different jobs on purpose:
+         teal #00C8C8  the LINE WORK — every hairline, label and bracket
+         blue #290CFF  the ATMOSPHERE — ambient glow, graph paper, washes
+       The blue is too dark and saturated to read as text on this ground. */
+    --accent:#00C8C8;
+    --accent-2:#5FF5F5;
+    --accent-hi:#CFFFFF;
+    --accent-dim:#0B5C63;
+    --accent-deep:#290CFF;
+    --accent-deep-hi:#5A45FF;
+    --accent-glow:rgba(41,12,255,.30);
+    --accent-halo:rgba(0,200,200,.5);
+    --accent-wash:rgba(0,200,200,.11);
+    --accent-film:rgba(0,200,200,.07);
+    --red:var(--accent);
+    --red-2:var(--accent-2);
+    --red-dim:var(--accent-dim);
+    --red-glow:var(--accent-glow);
+    /* Alerts are their own axis and deliberately do NOT follow the brand —
+       a colour meaning "this is wrong" cannot also be the furniture. */
+    --alert:#FF3B30;
+    --alert-film:rgba(255,59,48,.07);
+    --bone:#F4F1EC;
+    --ink:#E7E5E2;
+    --ink-2:#B6B4B0;
+    --dim:#7A7A80;
+    --dim-2:#4C4D54;
+    --amber:#E0A73C;
+    --amber-line:rgba(224,167,60,.45);
+    --green:#45D17C;
+    --green-line:rgba(69,209,124,.4);
+    --grid:rgba(41,12,255,.10);
+    --c-company:var(--accent); --c-contact:#8FA8C8; --c-deal:#E0A73C;
+    --c-lead:#A88BD8; --c-detached:var(--alert); --c-stub:#6E7480;
+    --ease:cubic-bezier(.22,.85,.3,1);
+    --mono:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{background:var(--void)}
+  body{
+    background:
+      radial-gradient(ellipse at 50% -10%, var(--red-glow), transparent 60%),
+      repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px 72px),
+      repeating-linear-gradient(to bottom, var(--grid) 0 1px, transparent 1px 72px),
+      var(--void);
+    color:var(--ink);
+    font-family:var(--mono);
+    font-size:13.5px;
+    line-height:1.6;
+    margin:0;
+    padding-block:0 60px;
+    padding-left:clamp(12px,2.4vw,30px);
+    padding-right:clamp(12px,2.4vw,30px);
+    -webkit-font-smoothing:antialiased;
+    position:relative;
+  }
+  body::after{
+    content:"";position:fixed;inset:0;z-index:99;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,.22) 3px, rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply;opacity:.55;
+  }
+  .wrap{max-width:1560px;margin:0 auto;position:relative;z-index:1;transition:opacity 460ms var(--ease) 260ms}
+  [data-phase="gate"] .wrap,[data-phase="run"] .wrap{opacity:0;pointer-events:none}
+  html[data-phase="gate"],html[data-phase="run"],
+  html[data-phase="gate"] body,html[data-phase="run"] body{overflow:hidden;height:100%}
+
+  /* ---------- corner-bracketed frames ----------
+     Inset to 0 and never wider than the frame — on a frame that scrolls,
+     anything hanging past the edge counts as content and raises a
+     scrollbar. */
+  .frame{position:relative;border:1px solid var(--rule);background:var(--panel)}
+  .frame::before,.frame::after{
+    content:"";position:absolute;left:0;right:0;height:12px;pointer-events:none;
+    background-repeat:no-repeat;
+    background-image:
+      linear-gradient(var(--red),var(--red)),linear-gradient(var(--red),var(--red)),
+      linear-gradient(var(--red),var(--red)),linear-gradient(var(--red),var(--red));
+    background-size:12px 2px, 2px 12px, 12px 2px, 2px 12px;
+  }
+  .frame::before{top:0;background-position:left top,left top,right top,right top}
+  .frame::after{bottom:0;background-position:left bottom,left bottom,right bottom,right bottom}
+
+  /* ---------- masthead ---------- */
+  .bar{
+    display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
+    gap:14px 24px;border-bottom:1px solid var(--red-dim);padding-block:22px 14px;margin-bottom:18px;
+  }
+  .brand h1{
+    font-size:clamp(19px,2.3vw,26px);font-weight:600;margin:0;line-height:1;
+    letter-spacing:.34em;text-transform:uppercase;color:var(--ink);
+  }
+  .brand .sub{
+    font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--red);
+    margin:0 0 9px;
+  }
+  .brand .tag{font-size:11px;color:var(--dim);margin:9px 0 0;max-width:78ch;letter-spacing:.04em}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;font-size:9.5px;letter-spacing:.14em;
+    text-transform:uppercase;padding:5px 9px;border:1px solid var(--rule);background:var(--panel);color:var(--dim);
+  }
+  .chip i{width:6px;height:6px;background:var(--dim-2);flex:none}
+  .chip.on{border-color:var(--green-line);color:var(--green)} .chip.on i{background:var(--green)}
+  .chip.off{border-color:var(--alert);color:var(--alert)} .chip.off i{background:var(--alert);animation:blink 1.1s steps(2) infinite}
+  .chip.warnc{border-color:var(--amber-line);color:var(--amber)} .chip.warnc i{background:var(--amber)}
+  @keyframes blink{50%{opacity:.25}}
+
+  /* ---------- command line ---------- */
+  .searchbox{display:flex;gap:0;align-items:stretch;border:1px solid var(--red-dim);background:var(--panel)}
+  .searchbox::before{
+    content:"▸ QUERY";display:flex;align-items:center;padding:0 12px;
+    font-size:10px;letter-spacing:.2em;color:var(--red);border-right:1px solid var(--red-dim);white-space:nowrap;
+  }
+  .searchbox input{
+    font-family:var(--mono);font-size:13px;letter-spacing:.08em;background:transparent;color:var(--ink);
+    border:none;padding:11px 12px;min-width:290px;flex:1;
+  }
+  .searchbox input::placeholder{color:var(--dim-2);letter-spacing:.06em}
+  .searchbox input:focus{outline:none}
+  .searchbox:focus-within{border-color:var(--red);box-shadow:0 0 0 1px var(--red-dim),0 0 22px var(--red-glow)}
+  .searchbox button{
+    font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    background:var(--red-dim);color:var(--ink);border:none;border-left:1px solid var(--red);
+    padding:0 20px;cursor:pointer;transition:background 140ms var(--ease);
+  }
+  .searchbox button:hover{background:var(--red);color:var(--void)}
+  @media (max-width:560px){ .searchbox{width:100%} .searchbox input{min-width:0} }
+
+  /* =====================================================================
+     THE DECK — three phases on html[data-phase].
+       gate : an empty screen with one field on it
+       run  : the console, behind two closed doors
+       open : the doors retract and the map is underneath
+     ===================================================================== */
+  #deck{position:fixed;inset:0;z-index:60;overflow:hidden}
+  [data-phase="open"] #deck{pointer-events:none}
+  .leaf{
+    position:absolute;inset:0;background:var(--void);overflow:hidden;
+    transition:transform 1000ms cubic-bezier(.76,0,.24,1);
+  }
+  .leaf::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at 50% -10%, var(--red-glow), transparent 60%);
+  }
+  /* The two clips OVERLAP by a pixel rather than meeting exactly: a leaf
+     coming back to translateY(0) can land on a fractional device pixel,
+     and two exactly-meeting clips then show a hairline across the screen.
+     An overlap is invisible where a gap is not. */
+  .leaf.top{clip-path:inset(0 0 calc(50% - 1px) 0)}
+  .leaf.bot{clip-path:inset(50% 0 0 0)}
+  [data-phase="open"] .leaf.top{transform:translateY(-101%)}
+  [data-phase="open"] .leaf.bot{transform:translateY(101%)}
+  .seam{
+    position:absolute;left:0;right:0;top:50%;height:1px;margin-top:-1px;z-index:2;pointer-events:none;
+    background:linear-gradient(90deg,transparent,var(--red) 14%,var(--accent-hi) 50%,var(--red) 86%,transparent);
+    opacity:0;transform:scaleX(0);transform-origin:50% 50%;
+  }
+  [data-state="arm"] .seam{
+    opacity:1;transform:scaleX(1);
+    box-shadow:0 0 26px 2px var(--accent-halo);
+    transition:transform 620ms cubic-bezier(.16,.84,.3,1),
+               opacity 120ms linear,
+               box-shadow 620ms var(--ease);
+  }
+  [data-phase="open"] .seam{opacity:0;transition:opacity 520ms var(--ease) 140ms}
+
+  /* ---------- the sigil ---------- */
+  .sigil{display:block;width:100%;height:auto;overflow:visible}
+  .sigil *{fill:none;stroke:var(--red);stroke-linecap:butt}
+  .sigil .s-t1{stroke-width:9;stroke-dasharray:1.7 9.4;stroke-opacity:.9}
+  .sigil .s-t2{stroke-width:5;stroke-dasharray:1.2 5.6;stroke-opacity:.6}
+  .sigil .s-ring{stroke-width:1;stroke-opacity:.45}
+  .sigil .s-box{stroke-width:1.2;stroke-opacity:.55}
+  .sigil .s-core{stroke-width:1.6;fill:var(--red);fill-opacity:.18}
+  .sigil g,.sigil .s-sq,.sigil .s-sq2{transform-box:view-box;transform-origin:50% 50%}
+  .sigil .s-r1{animation:spin 64s linear infinite}
+  .sigil .s-r2{animation:spin 41s linear infinite reverse}
+  .sigil .s-sq{animation:spin 96s linear infinite reverse}
+  .sigil .s-sq2{animation:spin 52s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .mark{
+    position:absolute;left:50%;top:50%;width:min(64vmin,660px);
+    transform:translate(-50%,-50%);pointer-events:none;z-index:0;
+    opacity:.10;transition:opacity 700ms var(--ease);
+  }
+  [data-phase="run"] .mark{opacity:.17}
+  [data-phase="run"] .mark .s-r1{animation-duration:9s}
+  [data-phase="run"] .mark .s-r2{animation-duration:6s}
+  [data-phase="run"] .mark .s-sq{animation-duration:15s}
+  [data-phase="run"] .mark .s-sq2{animation-duration:11s}
+  .scan{
+    position:absolute;left:0;right:0;top:0;height:2px;z-index:4;pointer-events:none;opacity:0;
+    background:linear-gradient(90deg,transparent,var(--accent-halo) 26%,var(--red-2) 50%,var(--accent-halo) 74%,transparent);
+    box-shadow:0 0 18px 1px var(--accent-halo);
+  }
+  [data-phase="run"] .scan{opacity:1;animation:sweep 3.6s cubic-bezier(.5,0,.5,1) infinite}
+  @keyframes sweep{from{transform:translateY(-2px)}to{transform:translateY(100vh)}}
+  .brandmark{width:38px;flex:none;opacity:.85}
+  .brandtop{display:flex;align-items:center;gap:14px}
+
+  /* ---------- console ---------- */
+  .leafin{position:absolute;inset:0;z-index:2;padding:0 clamp(16px,5vw,44px)}
+  .term{
+    max-width:880px;margin:0 auto;padding-top:10vh;
+    transition:opacity 500ms var(--ease),transform 500ms var(--ease);
+  }
+  [data-phase="gate"] .term{opacity:0;transform:translateY(12px)}
+  .tmast{
+    display:flex;flex-wrap:wrap;gap:3px 18px;align-items:baseline;
+    border-bottom:1px solid var(--red-dim);padding-bottom:9px;margin-bottom:13px;
+  }
+  .tmast .tt{font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--red)}
+  .tmast .td{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim-2)}
+  .clog{display:flex;flex-direction:column;gap:2px}
+  .cline{
+    display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 14px;align-items:baseline;
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+  }
+  .cline.fresh{animation:ctype 200ms var(--ease) both}
+  @keyframes ctype{from{opacity:0;transform:translateX(-7px)}to{opacity:1;transform:none}}
+  .cline b{color:var(--ink);font-weight:500}
+  .cline .t{color:var(--dim-2)}
+  .cline .m{overflow-wrap:anywhere}
+  .cline .nt{color:var(--dim-2)}
+  .cline .st{font-size:9.5px;letter-spacing:.14em;color:var(--dim-2);white-space:nowrap;text-align:right}
+  .cline.run{color:var(--ink-2)}
+  .cline.run .st{color:var(--red)}
+  .cline.ok .st{color:var(--green)}
+  .cline.err,.cline.err .st,.cline.err .nt{color:var(--amber)}
+  .cline.now .m::after{content:"▌";margin-left:4px;animation:blink .9s steps(2) infinite}
+  .pbar{
+    display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin-top:18px;
+    padding-top:11px;border-top:1px solid var(--rule);
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  }
+  .pbar .fill{color:var(--red);letter-spacing:-.5px}
+  .pbar .pct{color:var(--ink)}
+  .pbar .pl{color:var(--dim-2);font-size:9.5px;letter-spacing:.18em}
+
+  /* ---------- the gate: one field, nothing else ---------- */
+  #gate{
+    position:absolute;inset:0;z-index:3;display:grid;place-items:center;
+    padding:0 clamp(16px,5vw,44px);
+    transition:opacity 420ms var(--ease),transform 420ms var(--ease);
+  }
+  [data-phase="run"] #gate,[data-phase="open"] #gate{opacity:0;pointer-events:none;transform:translateY(-16px)}
+  [data-phase="run"][data-state="error"] #gate{
+    opacity:1;pointer-events:auto;transform:none;align-items:end;padding-bottom:11vh;
+  }
+  .gform{width:min(660px,100%);text-align:center;position:relative;z-index:2}
+  .glab{
+    display:flex;align-items:center;justify-content:center;gap:16px;
+    font-size:clamp(13px,1.9vw,17px);letter-spacing:.5em;text-indent:.5em;
+    text-transform:uppercase;color:var(--bone);
+  }
+  .glab::before,.glab::after{
+    content:"";height:1px;flex:1 1 0;max-width:120px;
+    background:linear-gradient(90deg,transparent,var(--red-dim),var(--red));
+  }
+  .glab::after{background:linear-gradient(270deg,transparent,var(--red-dim),var(--red))}
+  .gsub{display:block;font-size:9.5px;letter-spacing:.34em;text-transform:uppercase;color:var(--red);margin:9px 0 20px}
+  /* A bare record id is the one form that cannot say what it is on its own —
+     0-1 and 0-2 ids look identical. These chips say which, and nothing else. */
+  .gmodes{display:flex;justify-content:center;gap:6px;margin:0 0 16px}
+  .gm{
+    font-family:var(--mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;
+    background:transparent;color:var(--dim);border:1px solid var(--rule);
+    padding:5px 15px;cursor:pointer;transition:all 130ms var(--ease);
+  }
+  .gm:hover{border-color:var(--red-dim);color:var(--ink-2)}
+  .gm[aria-checked="true"]{border-color:var(--red);color:var(--red);background:var(--accent-wash)}
+  /* No outline. The field is given by its ground: the fill carries its
+     weight along the bottom and fades out towards the top. */
+  .gfield{
+    position:relative;display:flex;align-items:center;overflow:hidden;
+    border:none;padding:14px 16px;
+    background:linear-gradient(to top, rgba(13,14,17,.72), rgba(13,14,17,0));
+    transition:box-shadow 300ms var(--ease);
+  }
+  .gfield:focus-within{box-shadow:0 0 44px var(--red-glow)}
+  .gp{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--red);font-size:14px;pointer-events:none}
+  .gfield input,.gmirror{
+    font-family:var(--mono);font-size:clamp(14px,1.7vw,17px);letter-spacing:.16em;
+  }
+  .gfield input{
+    flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--ink);
+    padding:0;caret-color:transparent;text-align:center;
+  }
+  .gfield input::placeholder{color:var(--dim-2)}
+  .gmirror{position:absolute;left:-9999px;top:0;white-space:pre;visibility:hidden}
+  .gcur{
+    position:absolute;left:0;top:50%;width:9px;height:1.1em;margin-top:-.55em;background:var(--red);
+    animation:blink 1.05s steps(2) infinite;pointer-events:none;
+  }
+  .gfield:not(:focus-within) .gcur{opacity:.22;animation:none}
+  .ghint{font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim-2);margin:16px 0 0}
+  .gerr{font-size:10.5px;letter-spacing:.08em;color:var(--amber);margin:13px 0 0;min-height:1.5em}
+  /* what the map already holds, read from the gate */
+  .gmap{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);margin:20px 0 0;min-height:1.4em}
+  .gmap b{color:var(--accent);font-weight:500}
+
+  /* ---------- the FlapKap mark ----------
+     Inlined, not linked: the artifact's CSP blocks images from every
+     outside host, so an <img src="cdn…"> would silently render nothing. */
+  .fkmark{display:block;width:118px;height:33px;margin:0 auto 26px}
+  footer .fkmark{width:84px;height:24px;margin:18px 0 0;opacity:.5}
+  /* The real logo, torn. The tinting works because the symbol's paths take
+     their fills from custom properties, and a custom property is the one
+     thing that inherits through a <use> shadow boundary. */
+  .fkg{position:relative;width:clamp(134px,27vw,170px);aspect-ratio:307/86;margin:0 auto 26px}
+  .fkl{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+  .fkl.gh-a{--fk-t:var(--accent);--fk-a:var(--accent);--fk-b:var(--accent);
+    clip-path:inset(0 0 52% 0);animation:glitchA 2.7s steps(1) infinite}
+  .fkl.gh-b{--fk-t:var(--accent-deep-hi);--fk-a:var(--accent-deep-hi);--fk-b:var(--accent-deep-hi);
+    clip-path:inset(52% 0 0 0);animation:glitchB 3.3s steps(1) infinite}
+  /* Three tracks at 2.7s, 3.3s and 4.1s — they only come back into phase
+     after about half a minute, which is what stops it reading as a loop. */
+  .fkl.base{animation:glitchC 4.1s steps(1) infinite}
+  @keyframes glitchC{
+    0%,92%,100%{transform:translateX(0);opacity:1}
+    93%{transform:translateX(2px);opacity:.84}
+    94%{transform:translateX(-2px);opacity:1}
+    95%{transform:translateX(1px);opacity:.92}
+  }
+  @keyframes glitchA{
+    0%,84%,100%{clip-path:inset(0 0 52% 0);transform:translateX(0)}
+    85%{clip-path:inset(8% 0 66% 0);transform:translateX(-3px)}
+    87%{clip-path:inset(34% 0 40% 0);transform:translateX(3px)}
+    89%{clip-path:inset(2% 0 80% 0);transform:translateX(-2px)}
+    91%{clip-path:inset(0 0 52% 0);transform:translateX(0)}
+  }
+  @keyframes glitchB{
+    0%,88%,100%{clip-path:inset(52% 0 0 0);transform:translateX(0)}
+    89%{clip-path:inset(62% 0 8% 0);transform:translateX(3px)}
+    91%{clip-path:inset(70% 0 0 0);transform:translateX(-4px)}
+    93%{clip-path:inset(52% 0 0 0);transform:translateX(0)}
+  }
+
+  /* ---------- section heads ---------- */
+  .sh{
+    display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;
+    border-bottom:1px solid var(--rule);padding-bottom:7px;margin:22px 0 14px;
+  }
+  .sh h2{
+    font-size:11px;font-weight:600;margin:0;letter-spacing:.26em;text-transform:uppercase;color:var(--red);
+  }
+  .sh h2::before{content:"// "}
+  .sh .hint{font-size:10.5px;color:var(--dim);margin:0;flex:1 1 200px;letter-spacing:.05em}
+  .acts{display:flex;gap:6px;flex-wrap:wrap}
+  .act{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;background:transparent;
+    color:var(--ink-2);border:1px solid var(--rule);padding:6px 11px;cursor:pointer;transition:all 140ms var(--ease);
+  }
+  .act:hover{border-color:var(--red);color:var(--red)}
+  .act.go{border-color:var(--red-dim);color:var(--red)}
+  .act.go::before{content:"▸ ";}
+  .act.go:hover{background:var(--red-dim);color:var(--ink)}
+  .act:disabled{opacity:.5;cursor:default}
+  .act.done{border-color:var(--green);color:var(--green)}
+  .act.bad{border-color:var(--amber);color:var(--amber)}
+  /* forgetting an account is destructive, so it asks twice */
+  .act.arm{border-color:var(--alert);color:var(--alert)}
+
+  /* ---------- the roster of walked accounts ---------- */
+  .roster{display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+  .rz{
+    background:var(--panel);padding:9px 12px 10px;flex:1 1 190px;min-width:0;
+    cursor:pointer;border:none;text-align:left;font-family:var(--mono);
+    transition:background 130ms var(--ease);
+  }
+  .rz:hover{background:var(--panel-2)}
+  .rz .rn{font-size:11.5px;color:var(--ink);letter-spacing:.04em;display:block;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rz .rd{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2);display:block;margin-top:4px}
+  .rz .rd b{color:var(--dim);font-weight:400}
+  /* a walk older than a fortnight has stopped being a live picture */
+  .rz.stale .rd b{color:var(--amber)}
+
+  /* =====================================================================
+     THE MAP — a surveillance plot you can work, not a picture.
+     Nothing here fetches anything: holding a record, moving it, filtering
+     a group, switching layout and zooming all read the walks that have
+     already happened.
+     ===================================================================== */
+  .graphwrap{border:1px solid var(--rule);background:var(--panel);padding:0;overflow:hidden;position:relative}
+  .gbar{
+    display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;justify-content:space-between;
+    border-bottom:1px solid var(--rule);padding:9px 12px 9px 14px;background:var(--panel-2);
+  }
+  .gread{
+    font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);
+    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 260px;
+  }
+  .gread::before{content:"▸ ";color:var(--node,var(--accent))}
+  .gread b{color:var(--bone);font-weight:500;letter-spacing:.14em}
+  .gread .gcls{color:var(--node,var(--accent));letter-spacing:.22em}
+  /* shrinks and wraps on a narrow frame rather than running off the edge
+     of a panel that clips — the buttons past the edge were unreachable */
+  .gtools{display:flex;flex-wrap:wrap;gap:5px;flex:0 1 auto;max-width:100%;min-width:0}
+  .gtool{
+    font-family:var(--mono);font-size:10px;line-height:1;letter-spacing:.1em;
+    background:transparent;color:var(--dim);border:1px solid var(--rule);
+    width:26px;height:24px;cursor:pointer;transition:all 130ms var(--ease);
+  }
+  .gtool:hover{border-color:var(--red);color:var(--red)}
+  .gtool[disabled]{opacity:.35;cursor:default}
+  .gtool[disabled]:hover{border-color:var(--rule);color:var(--dim)}
+  .gtool.wide{width:auto;padding:0 10px;font-size:9px;letter-spacing:.18em;text-transform:uppercase}
+  .gtool.gbad{border-color:var(--amber);color:var(--amber)}
+  .gmode[aria-pressed="true"]{border-color:var(--red);color:var(--red);background:var(--accent-wash)}
+  /* Expand search on every record. It spends quota like nothing else on
+     the toolbar, so it is set apart as an action: armed it turns amber and
+     asks again, running it becomes its own Stop button. */
+  .gtool.gall{border-color:var(--red-dim);color:var(--red)}
+  .gtool.gall:hover{background:var(--red-dim);color:var(--ink)}
+  .gtool.gall[disabled]:hover{background:transparent;border-color:var(--red-dim);color:var(--red)}
+  .gtool.gall.arm{border-color:var(--amber);color:var(--amber);background:transparent}
+  .gtool.gall.live{border-color:var(--red);color:var(--bone);background:var(--accent-wash)}
+  .gtool.gall.live:hover{border-color:var(--alert);color:var(--alert)}
+  /* the result holds for a moment at full strength — dimmed like a
+     disabled control it would read as something that did not happen */
+  .gtool.gall.flash[disabled],.gtool.gall.flash[disabled]:hover{opacity:1;border-color:var(--green-line);color:var(--green);background:transparent}
+  .gtool.gall.flash.gbad[disabled],.gtool.gall.flash.gbad[disabled]:hover{border-color:var(--amber);color:var(--amber)}
+
+  .gstage{position:relative;padding:8px}
+  /* pan-y, not none: a vertical touch drag over the plot must still scroll */
+  svg.graph{display:block;width:100%;max-width:100%;height:auto;cursor:grab;touch-action:pan-y}
+  svg.graph.gdrag,svg.graph.gmoving{cursor:grabbing}
+  .gscene{transition:transform 180ms var(--ease)}
+  /* under the hand, and while the view is flying to a company, the scene
+     is driven frame by frame — a CSS transition would fight it */
+  svg.graph.gdrag .gscene,svg.graph.gmoving .gscene,svg.graph.gfly .gscene{transition:none}
+
+  .gnode{cursor:move}
+  /* The marker is drawn at the origin and the node's transform places it,
+     so growing one is a scale on the shape — which works whatever shape
+     it is. Animating `r` only ever worked for circles. */
+  .gnode .gmk{transform-box:fill-box;transform-origin:center;
+    transition:transform 160ms var(--ease),fill-opacity 160ms var(--ease)}
+  .gnode:hover .gmk,.gnode:focus-visible .gmk{transform:scale(1.34)}
+  /* a company carries an account's name, so it is set a weight above */
+  .gnode.gco .glabel{font-size:6.75px;font-weight:600;fill:var(--ink)}
+  .gnode:focus{outline:none}
+  .gnode:focus-visible{outline:1px solid var(--red);outline-offset:3px}
+
+  /* Every edge is a <path> — a straight run is just M…L… — so changing
+     layout only ever rewrites `d`.
+     A DASH MEANS ONE THING ONLY: a mis-association. */
+  .gedge{fill:none;stroke:var(--rule);stroke-width:1}
+  .gedge.eplace{stroke:var(--rule);stroke-width:1;stroke-opacity:1;stroke-dasharray:none}
+  /* an echo: this link is already said by the edges that place both ends.
+     Faint, and SOLID — it is confirmation, not a fault. */
+  .gedge.eecho{stroke:var(--ink);stroke-width:.8;stroke-opacity:.14;stroke-dasharray:none}
+  /* THE CROSS-HIVE EDGE — a record that belongs to a company other than
+     the one it lives in. This is the finding the whole map exists for, so
+     it is never reduced to an echo whatever the weight rule says. */
+  .gedge.ecross{stroke:var(--alert);stroke-width:1.8;stroke-opacity:.95;stroke-dasharray:4 4}
+  /* sits on an account's numbers and is attached to nothing */
+  .gedge.edetach{stroke:var(--alert);stroke-width:1.2;stroke-opacity:.9;stroke-dasharray:3 4}
+
+  /* Both ends of a mis-association are ringed: the record that is on two
+     accounts, and nothing else. A ring says "this pair is the problem". */
+  .gring{fill:none;stroke:var(--alert);stroke-width:1;stroke-opacity:.6;pointer-events:none}
+  .gnode .gring{display:none}
+  .gnode.gmis .gring{display:inline;animation:ringpulse 2.6s ease-in-out infinite}
+  @keyframes ringpulse{50%{stroke-opacity:.16}}
+
+  /* The light that runs a held record's paths: one short lit dash inside
+     an enormous gap, so it reads as something travelling and never as a
+     dashed line. Dash, offset and duration come from the path's own
+     length, or a light would crawl along a long edge and race a short one. */
+  .gspark{
+    fill:none;stroke:var(--node,var(--red-2));stroke-width:2.2;stroke-linecap:round;
+    stroke-dasharray:var(--sl,18 2000);opacity:0;pointer-events:none;
+    filter:brightness(1.45);
+  }
+  .gspark.on{opacity:.95;animation:flow var(--sd,1.6s) linear infinite}
+  @keyframes flow{from{stroke-dashoffset:var(--so,2018px)}to{stroke-dashoffset:0}}
+
+  /* viewBox units, not CSS pixels — the plot is scaled to its frame */
+  .glabel{font-family:var(--mono);font-size:6px;fill:var(--ink-2);letter-spacing:.08em;text-transform:uppercase}
+  /* gsubl, not gsub: .gsub is the gate's subtitle, and being declared
+     later that rule would win and render the subtitle at 7.5px */
+  .gsubl{font-family:var(--mono);font-size:5px;fill:var(--dim-2);letter-spacing:.06em}
+  /* the ring a hive draws around itself, so a company's territory reads
+     even when the plot is zoomed out past its labels */
+  .ghalo{fill:none;stroke:var(--accent-dim);stroke-width:1;stroke-opacity:.30;pointer-events:none}
+  .ghalo.stale{stroke:var(--amber-line)}
+  .ghivelab{font-family:var(--mono);font-size:7px;fill:var(--dim-2);letter-spacing:.24em;
+    text-transform:uppercase;text-anchor:middle;pointer-events:none}
+
+  /* ---- interaction states ---- */
+  .gitem{transition:opacity 200ms var(--ease)}
+  .gitem.gdim{opacity:.08}
+  .gnode.ghot .gmk,.gnode.gsel .gmk{fill-opacity:.75}
+  .gnode.gsel .glabel,.gnode.ghot .glabel{fill:var(--bone)}
+  /* Declared after the weight rules so a lit edge outranks its own weight.
+     A lit connection takes the colour of the record at its FAR end. */
+  .gedge.glit{stroke:var(--node,var(--red));stroke-width:1.6;stroke-opacity:.9}
+  .gedge.eecho.glit{stroke:var(--node,var(--red-2));stroke-opacity:.8;stroke-width:1.3}
+  /* except a mis-association, which stays an alert even while it is lit —
+     the fault does not stop being a fault because you selected it */
+  .gedge.ecross.glit,.gedge.edetach.glit{stroke:var(--alert);stroke-width:2.1}
+  /* a filtered-out group leaves the plot entirely — it is not an answer
+     that has been dimmed, it is a question that was not asked */
+  .gwrap[data-hide~="contact"] .n-contact,
+  .gwrap[data-hide~="deal"] .n-deal,
+  .gwrap[data-hide~="lead"] .n-lead,
+  .gwrap[data-hide~="detached"] .n-detached,
+  .gwrap[data-hide~="echo"] .n-echo,
+  .gwrap[data-hide~="cross"] .n-cross,
+  .gwrap[data-hide~="stub"] .n-stub{display:none}
+
+  .reticle{pointer-events:none;display:none}
+  .reticle.on{display:inline}
+  .reticle *{fill:none;stroke:var(--node,var(--red));stroke-width:1.2}
+  .reticle .ret-spin{transform-box:fill-box;transform-origin:center;animation:spin 14s linear infinite}
+  .reticle .ret-c{stroke-width:2}
+  /* the arrival flash when the view travels to a company already on the map */
+  /* the arrival flash: the reticle strikes twice and settles, so a travel
+     to a company already on the map lands somewhere visible rather than
+     leaving the reader to find where the view stopped */
+  .reticle.land{animation:land 640ms var(--ease) 1}
+  @keyframes land{ 0%{opacity:0} 14%{opacity:1} 34%{opacity:.25} 52%{opacity:1} 100%{opacity:1} }
+  #greticle.land .ret-c{stroke-width:3.4}
+
+  /* ---- the expand affordance ----
+     It fades in with the cursor's nearness to its own record, measured to
+     the record OR the button, whichever is nearer — the button sits below
+     its record, so walking the cursor to it takes you away from the thing
+     that summoned it and it would fade out from under your hand. */
+  .gxb{opacity:var(--near,0);transition:opacity 110ms linear;pointer-events:none;cursor:pointer}
+  /* Only the NEAREST record accepts the pointer. Several can be lit at
+     once and their hit areas overlap. */
+  .gnode.gpick .gxb{pointer-events:auto}
+  .gxb:hover{opacity:1}
+  .gxb .gxbhit{fill:transparent;stroke:none}
+  .gxb .gxbb{fill:var(--void);fill-opacity:.94;stroke:var(--node,var(--accent));stroke-width:1}
+  .gxb .gxbt{
+    fill:var(--node,var(--accent));font-family:var(--mono);font-size:5.2px;
+    letter-spacing:.16em;text-anchor:middle;text-transform:uppercase;
+  }
+  .gxb:hover .gxbb{fill:var(--node,var(--accent));fill-opacity:.22}
+  .gxb:hover .gxbt{fill:var(--bone)}
+  /* An opened record keeps its pill and says so — a control that simply
+     vanishes reads as a fault rather than as a state. */
+  .gnode.gdone .gxb{pointer-events:none;cursor:default}
+  .gnode.gdone .gxbb{stroke:var(--dim-2)}
+  .gnode.gdone .gxbt{fill:var(--dim-2)}
+  .gnode.gdim.gnear{opacity:.6}
+
+  /* ---- the expansion console ---- */
+  .gexp{
+    position:absolute;right:0;top:0;bottom:0;width:min(290px,44%);z-index:7;
+    background:linear-gradient(270deg,var(--void) 0%,var(--void) 82%,rgba(7,7,10,.88) 100%);
+    border-left:1px solid var(--node,var(--accent-dim));
+    padding:14px 15px;overflow-y:auto;pointer-events:none;
+    transform:translateX(102%);opacity:0;visibility:hidden;
+    transition:transform 300ms var(--ease),opacity 220ms var(--ease),visibility 0s linear 300ms;
+  }
+  .gexp.on{
+    transform:none;opacity:1;visibility:visible;
+    transition:transform 300ms var(--ease),opacity 220ms var(--ease),visibility 0s linear 0s;
+  }
+  .gexp .xh{
+    font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:var(--node,var(--accent));
+    border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:10px;
+  }
+  .gexp .xh b{display:block;color:var(--bone);font-weight:500;letter-spacing:.1em;margin-top:4px}
+  .xl{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:baseline;
+    font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+    padding:2px 0;animation:ctype 180ms var(--ease) both;
+  }
+  .xl .xs{font-size:8.5px;letter-spacing:.14em;white-space:nowrap;color:var(--dim-2)}
+  .xl.run{color:var(--ink-2)} .xl.run .xs{color:var(--node,var(--accent))}
+  .xl.ok .xs{color:var(--green)}
+  .xl.err,.xl.err .xs{color:var(--amber)}
+  .xl.sum{color:var(--bone);border-top:1px solid var(--rule);margin-top:8px;padding-top:8px}
+
+  /* ---- expanded: the plot fills the frame ----
+     A CSS overlay is the mechanism; the Fullscreen API is asked for on
+     top of it, because the API is not granted in every embedding. */
+  #gwrap.gfull{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:var(--void)}
+  #gwrap.gfull .gstage{flex:1;min-height:0;padding:14px;display:flex;position:relative}
+  #gwrap.gfull svg.graph{width:100%;height:100%}
+  html.gfullon,html.gfullon body{overflow:hidden}
+
+  /* ---- legend, which is also the filter ---- */
+  .legend{display:flex;flex-wrap:wrap;gap:6px 8px;padding:9px 12px;border-top:1px solid var(--rule);background:var(--panel-2)}
+  .lg{
+    display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:9px;
+    color:var(--dim);letter-spacing:.14em;text-transform:uppercase;
+    background:transparent;border:1px solid transparent;padding:3px 7px;cursor:pointer;
+    transition:all 130ms var(--ease);
+  }
+  .lg:hover{border-color:var(--rule);color:var(--ink-2)}
+  .lg[aria-pressed="false"]{opacity:.34;text-decoration:line-through}
+  /* The swatches are drawn by the same function as the markers, so a
+     shape can never be described here as something it is not drawn as. */
+  .lg .lgs{width:14px;height:14px;flex:none;overflow:visible}
+  .lg .lgs.wide{width:20px;height:10px}
+  .lg.static{cursor:default}
+  .lg.static:hover{border-color:transparent;color:var(--dim)}
+
+  /* ---- the inspector: the held record, in full ----
+     Inside .gstage, so it covers the plot and leaves the toolbar and the
+     legend reachable. Opens on a class, not the hidden attribute:
+     display:none cannot be transitioned. */
+  .ginsp{
+    position:absolute;left:0;top:0;bottom:0;width:min(340px,46%);z-index:6;
+    overflow-y:auto;padding:14px 16px 16px;
+    border-right:1px solid var(--node,var(--accent-dim));
+    background:linear-gradient(90deg,var(--void) 0%,var(--void) 82%,rgba(7,7,10,.88) 100%);
+    transform:translateX(-102%);opacity:0;visibility:hidden;pointer-events:none;
+    transition:transform 260ms var(--ease),opacity 200ms var(--ease),visibility 0s linear 260ms;
+  }
+  .ginsp.on{
+    transform:none;opacity:1;visibility:visible;pointer-events:auto;
+    transition:transform 260ms var(--ease),opacity 200ms var(--ease),visibility 0s linear 0s;
+  }
+  .ginsp .ik{
+    display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;
+    font-size:9px;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--node,var(--accent));margin-bottom:7px;
+  }
+  .ginsp .ik .iid{color:var(--dim-2);letter-spacing:.14em}
+  .ginsp .iv{font-size:clamp(14px,1.7vw,18px);color:var(--bone);letter-spacing:.04em;line-height:1.25;overflow-wrap:anywhere}
+  .ginsp .isub{font-size:10.5px;color:var(--dim);margin-top:5px;letter-spacing:.06em}
+  .ginsp .isub.bad{color:var(--alert)}
+  /* A GRID, not an inline-block label with the value running on after it —
+     that let a long value wrap back under the label and read as part of
+     the field name. */
+  .ginsp .irow{
+    display:grid;grid-template-columns:104px minmax(0,1fr);gap:0 12px;
+    margin-top:9px;font-size:10.5px;color:var(--ink-2);letter-spacing:.04em;line-height:1.65;
+  }
+  .ginsp .irow .il{
+    font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim-2);
+    padding-top:1px;overflow-wrap:anywhere;
+  }
+  .ginsp .irow .iv2{min-width:0;overflow-wrap:anywhere}
+  .ginsp .ilink{
+    background:transparent;border:none;padding:0;cursor:pointer;font-family:var(--mono);font-size:10.5px;
+    letter-spacing:.04em;border-bottom:1px solid var(--rule);
+    color:var(--lnk,var(--ink));
+  }
+  .ginsp .ilink:hover{border-color:currentColor;filter:brightness(1.25)}
+  .ginsp .iacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+  .ginsp .iacts .act{display:inline-block;text-decoration:none;line-height:1.5}
+  .ginsp .iacts a.act{border-color:var(--node,var(--rule));color:var(--node,var(--ink-2))}
+  .ginsp .iacts a.act:hover{filter:brightness(1.3)}
+  .ginsp .inone{color:var(--dim-2);font-size:10.5px;letter-spacing:.06em}
+  .ghint2{padding:8px 14px 10px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2);border-top:1px solid var(--rule)}
+
+  /* ---------- the record tooltip ----------
+     ONE element for the whole page, refilled and repositioned rather than
+     one per record, so the plot can be torn down and rebuilt beneath it. */
+  #tip{
+    position:fixed;left:0;top:0;z-index:80;pointer-events:none;opacity:0;
+    max-width:330px;padding:10px 13px 11px;
+    font-family:var(--mono);font-size:11px;line-height:1.55;letter-spacing:.04em;
+    color:var(--ink-2);border:1px solid var(--rule);
+    background-color:var(--void);
+    background-image:
+      linear-gradient(var(--red),var(--red)),linear-gradient(var(--red),var(--red)),
+      linear-gradient(var(--red),var(--red)),linear-gradient(var(--red),var(--red)),
+      linear-gradient(var(--red),var(--red)),linear-gradient(var(--red),var(--red)),
+      linear-gradient(var(--red),var(--red)),linear-gradient(var(--red),var(--red));
+    background-repeat:no-repeat;
+    background-size:10px 2px,2px 10px,10px 2px,2px 10px,10px 2px,2px 10px,10px 2px,2px 10px;
+    background-position:left top,left top,right top,right top,
+                        left bottom,left bottom,right bottom,right bottom;
+    box-shadow:0 10px 30px rgba(0,0,0,.65);
+    /* opacity only. Transitioning left/top makes it swim along behind the
+       cursor; fading alone tracks instantly and still arrives softly. */
+    transition:opacity 120ms var(--ease);
+  }
+  #tip.on{opacity:1}
+  #tip .tc{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--node,var(--accent))}
+  #tip .tn{font-size:13px;color:var(--bone);letter-spacing:.06em;margin-top:3px;line-height:1.3;overflow-wrap:anywhere}
+  #tip .ts{font-size:10px;color:var(--dim);margin-top:2px}
+  #tip .tr{display:flex;gap:10px;margin-top:5px}
+  #tip .tk{flex:none;width:74px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2);padding-top:1px}
+  #tip .tv{min-width:0;overflow-wrap:anywhere}
+  #tip .tv.bad{color:var(--alert)}
+  #tip .tnone{color:var(--dim-2);font-size:10px}
+  #tip .tfoot{margin-top:9px;padding-top:8px;border-top:1px solid var(--rule)}
+  #tip .tpre{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2)}
+
+  code{font-family:var(--mono);font-size:.92em;background:var(--panel-2);padding:1px 5px;color:var(--ink-2);border:1px solid var(--rule)}
+  footer{border-top:1px solid var(--red-dim);margin-top:34px;padding-top:15px;font-size:10px;color:var(--dim-2);
+    line-height:1.75;letter-spacing:.05em}
+  footer p{margin:0 0 8px;max-width:104ch}
+  footer b{color:var(--dim);letter-spacing:.14em;text-transform:uppercase}
+  [hidden]{display:none!important}
+  /* the void, not white — teal is a light colour and white on it is unreadable */
+  ::selection{background:var(--accent);color:var(--void)}
+  :focus-visible{outline:1px solid var(--red);outline-offset:2px}
+  /* with animation off the scan bar would just sit at the top of the
+     screen as a rule, so it is withdrawn rather than frozen */
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} body::after,.scan,.gspark{display:none} }
+</style>
+<!-- the phase is stamped before the rest of the body parses, so the console
+     never shows for a frame on the way to the gate -->
+<script>document.documentElement.setAttribute("data-phase","gate");</script>
+
+<!-- The FlapKap wordmark, defined once and referenced wherever it is shown.
+     Its paths take their fills from custom properties, which is what lets a
+     copy be tinted through a <use> shadow boundary. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="fkmark" viewBox="0 0 307 86">
+    <path d="M289.516 0C285.453 0 281.556 1.62549 278.682 4.51887C275.809 7.41226 274.195 11.3365 274.195 15.4284V30.9206H291.679C295.742 30.9206 299.639 29.2951 302.513 26.4017C305.386 23.5083 307 19.584 307 15.4922V0H289.516Z" fill="var(--fk-a,#00C8C8)"/>
+    <path d="M296.864 8.23836H279.417C277.399 8.22996 275.4 8.62283 273.534 9.39442C271.668 10.166 269.971 11.3011 268.542 12.7346C267.113 14.1681 265.978 15.8718 265.205 17.7478C264.431 19.6238 264.032 21.6353 264.032 23.6667V39.2045H291.652C295.715 39.2045 299.612 37.579 302.485 34.6856C305.359 31.7922 306.973 27.868 306.973 23.7761V8.28393L296.864 8.23836Z" fill="var(--fk-b,#290CFF)"/>
+    <path d="M29.8572 27.1139C29.8572 28.5805 28.6921 29.7538 27.2356 29.7538H9.90386V42.4404H25.1238C26.5802 42.4404 27.7454 43.6137 27.7454 45.0804V49.0403C27.7454 50.507 26.5802 51.6803 25.1238 51.6803H9.90386V69.2068C9.90386 70.6735 8.7387 71.8468 7.28225 71.8468H2.62161C1.16516 71.8468 0 70.6735 0 69.2068V23.1539C0 21.6872 1.16516 20.5139 2.62161 20.5139H27.2356C28.6921 20.5139 29.8572 21.6872 29.8572 23.1539V27.1139Z" fill="var(--fk-t,#fff)"/>
+    <path d="M37.4695 23.1539C37.4695 21.6872 38.6346 20.5139 40.0911 20.5139H44.1691C45.5528 20.5139 46.7179 21.6872 46.7179 23.1539V69.2068C46.7179 70.6735 45.5528 71.8468 44.1691 71.8468H40.0911C38.6346 71.8468 37.4695 70.6735 37.4695 69.2068V23.1539Z" fill="var(--fk-t,#fff)"/>
+    <path d="M83.0615 37.3071C83.0615 35.8404 84.2266 34.6671 85.6831 34.6671H89.6883C91.1448 34.6671 92.31 35.8404 92.31 37.3071V69.2068C92.31 70.6735 91.1448 71.8468 89.6883 71.8468H85.6831C84.2266 71.8468 83.0615 70.6735 83.0615 69.2068V67.4468C80.7312 70.5268 77.0172 72.7268 71.2642 72.7268C59.8311 72.7268 53.2771 62.9735 53.2771 53.2936C53.2771 43.5404 59.8311 33.7871 71.2642 33.7871C77.0172 33.7871 80.7312 35.9871 83.0615 39.0671V37.3071ZM72.7207 63.8535C79.0562 63.8535 82.6974 59.0136 82.6974 53.2936C82.6974 47.5003 79.0562 42.7337 72.7207 42.7337C66.3851 42.7337 62.744 47.5737 62.744 53.2936C62.744 58.9402 66.3851 63.8535 72.7207 63.8535Z" fill="var(--fk-t,#fff)"/>
+    <path d="M122.02 33.7871C133.526 33.7871 140.08 43.5404 140.08 53.2936C140.08 62.9735 133.526 72.7268 122.02 72.7268C116.34 72.7268 112.626 70.5268 110.295 67.4468V83.4334C110.295 84.8267 109.13 86 107.674 86H103.596C102.212 86 101.047 84.8267 101.047 83.4334V37.3071C101.047 35.8404 102.212 34.6671 103.596 34.6671H107.674C109.13 34.6671 110.295 35.8404 110.295 37.3071V39.0671C112.626 35.9871 116.34 33.7871 122.02 33.7871ZM120.636 63.8535C126.972 63.8535 130.613 58.9402 130.613 53.2936C130.613 47.5737 126.972 42.7337 120.636 42.7337C114.228 42.7337 110.66 47.5003 110.66 53.2936C110.66 59.0136 114.228 63.8535 120.636 63.8535Z" fill="var(--fk-t,#fff)"/>
+    <path d="M185.447 69.2068C186.248 70.2335 185.519 71.8468 184.136 71.8468H177.145C176.198 71.8468 175.251 71.4068 174.596 70.6001L156.827 47.9403V69.2068C156.827 70.6735 155.662 71.8468 154.279 71.8468H149.545C148.161 71.8468 146.996 70.6735 146.996 69.2068V23.1539C146.996 21.6872 148.161 20.5139 149.545 20.5139H154.279C155.662 20.5139 156.827 21.6872 156.827 23.1539V44.9337L173.431 21.8339C174.013 21.0272 175.033 20.5139 176.052 20.5139H182.461C183.772 20.5139 184.5 22.0539 183.699 23.1539L166.731 45.8137L185.447 69.2068Z" fill="var(--fk-t,#fff)"/>
+    <path d="M218.395 37.3071C218.395 35.8404 219.56 34.6671 221.016 34.6671H225.022C226.478 34.6671 227.643 35.8404 227.643 37.3071V69.2068C227.643 70.6735 226.478 71.8468 225.022 71.8468H221.016C219.56 71.8468 218.395 70.6735 218.395 69.2068V67.4468C216.064 70.5268 212.35 72.7268 206.597 72.7268C195.164 72.7268 188.61 62.9735 188.61 53.2936C188.61 43.5404 195.164 33.7871 206.597 33.7871C212.35 33.7871 216.064 35.9871 218.395 39.0671V37.3071ZM208.054 63.8535C214.389 63.8535 218.031 59.0136 218.031 53.2936C218.031 47.5003 214.389 42.7337 208.054 42.7337C201.718 42.7337 198.077 47.5737 198.077 53.2936C198.077 58.9402 201.718 63.8535 208.054 63.8535Z" fill="var(--fk-t,#fff)"/>
+    <path d="M257.353 33.7871C268.859 33.7871 275.413 43.5404 275.413 53.2936C275.413 62.9735 268.859 72.7268 257.353 72.7268C251.673 72.7268 247.959 70.5268 245.629 67.4468V83.4334C245.629 84.8267 244.464 86 243.007 86H238.929C237.545 86 236.38 84.8267 236.38 83.4334V37.3071C236.38 35.8404 237.545 34.6671 238.929 34.6671H243.007C244.464 34.6671 245.629 35.8404 245.629 37.3071V39.0671C247.959 35.9871 251.673 33.7871 257.353 33.7871ZM255.969 63.8535C262.305 63.8535 265.946 58.9402 265.946 53.2936C265.946 47.5737 262.305 42.7337 255.969 42.7337C249.561 42.7337 245.993 47.5003 245.993 53.2936C245.993 59.0136 249.561 63.8535 255.969 63.8535Z" fill="var(--fk-t,#fff)"/>
+  </symbol>
+</svg>
+
+<div class="wrap">
+  <div class="bar">
+    <div class="brand">
+      <div class="brandtop">
+        <svg class="sigil brandmark" viewBox="-70 -70 140 140" aria-hidden="true" focusable="false">
+          <g class="s-r1"><circle class="s-t1" r="61"/></g>
+          <g class="s-r2"><circle class="s-t2" r="49"/></g>
+          <circle class="s-ring" r="38"/>
+          <g class="s-sq"><rect class="s-box" x="-27" y="-27" width="54" height="54"/></g>
+          <g class="s-sq2"><rect class="s-box" x="-19" y="-19" width="38" height="38"/></g>
+          <path class="s-core" d="M0,-10 L10,0 L0,10 L-10,0 Z"/>
+        </svg>
+        <div>
+          <p class="sub">FlapKap · HubSpot · Read-only · Operator <span data-who>—</span></p>
+          <h1>Account Atlas</h1>
+        </div>
+      </div>
+      <p class="tag">One accumulating map of the portal. Search a company and it is walked, drawn and kept; search one already on the map and the view travels to it. A record on two accounts is <b>one node joining two hives</b> — which is the thing a table of duplicates cannot show you.</p>
+      <div class="chips">
+        <span class="chip" id="chipDb"><i></i><span id="chipDbTxt">Map · checking…</span></span>
+        <span class="chip" id="chipHs"><i></i><span id="chipHsTxt">HubSpot · unverified</span></span>
+      </div>
+    </div>
+    <div class="searchbox">
+      <input id="q2" type="search" placeholder="ENTER DESIGNATION" autocomplete="off" spellcheck="false" aria-label="Record id, email address or admin-app user id">
+      <button type="button" id="go2">Acquire</button>
+    </div>
+  </div>
+
+  <div id="atlas"></div>
+
+  <footer>
+    <p><b>What it does.</b> Walks one company's association graph — its contacts, deals and leads, how those link to each other, and what any of them reach outside the account — then merges the result into a map that is kept between sessions. Walking a second company that shares a contact draws the two as one figure joined by that person.</p>
+    <p><b>Reads only.</b> Everything comes through your own HubSpot connector with your permissions; nothing is written back to HubSpot and no credentials touch this page. The map itself is stored against this artifact and is readable by everyone it is shared with.</p>
+    <p><b>Caps on one walk:</b> 200 contacts, 200 deals, 200 leads — HubSpot's own ceiling on a page of results — plus 40 objects in the link mesh, 20 lead-to-deal reads, 16 records reached outside the account and 5 phone probes. A walk that hits one says so in its console and on the account's entry, so a partial picture is never a silent one. <b>Expand search · all</b> opens out every record shown that has not been opened yet — three reads each, 40 results a read, at most 60 records a press — and goes one level further out each time it is pressed. <b>Times are UTC</b>, as HubSpot's API returns them — not the UTC+4 that CSV exports render.</p>
+    <svg class="fkmark" role="img" aria-label="FlapKap"><use href="#fkmark"/></svg>
+  </footer>
+</div>
+
+<!-- The deck sits over the page. Both leaves carry the same console markup;
+     one is clipped to the top half of the viewport and one to the bottom. -->
+<div id="deck">
+  <div class="leaf top" aria-hidden="true">
+    <svg class="sigil mark" viewBox="-70 -70 140 140" aria-hidden="true" focusable="false">
+      <g class="s-r1"><circle class="s-t1" r="61"/></g>
+      <g class="s-r2"><circle class="s-t2" r="49"/></g>
+      <circle class="s-ring" r="38"/>
+      <g class="s-sq"><rect class="s-box" x="-27" y="-27" width="54" height="54"/></g>
+      <g class="s-sq2"><rect class="s-box" x="-19" y="-19" width="38" height="38"/></g>
+      <path class="s-core" d="M0,-10 L10,0 L0,10 L-10,0 Z"/>
+    </svg>
+    <div class="scan"></div>
+    <div class="leafin"><div class="term">
+      <div class="tmast"><span class="tt">Account Atlas</span><span class="td">HubSpot · Read-only</span></div>
+      <div data-console></div>
+    </div></div>
+  </div>
+  <div class="leaf bot">
+    <svg class="sigil mark" viewBox="-70 -70 140 140" aria-hidden="true" focusable="false">
+      <g class="s-r1"><circle class="s-t1" r="61"/></g>
+      <g class="s-r2"><circle class="s-t2" r="49"/></g>
+      <circle class="s-ring" r="38"/>
+      <g class="s-sq"><rect class="s-box" x="-27" y="-27" width="54" height="54"/></g>
+      <g class="s-sq2"><rect class="s-box" x="-19" y="-19" width="38" height="38"/></g>
+      <path class="s-core" d="M0,-10 L10,0 L0,10 L-10,0 Z"/>
+    </svg>
+    <div class="scan"></div>
+    <div class="leafin"><div class="term">
+      <div class="tmast"><span class="tt">Account Atlas</span><span class="td">HubSpot · Read-only</span></div>
+      <div data-console role="log" aria-live="polite"></div>
+    </div></div>
+  </div>
+  <div class="seam"></div>
+
+  <div id="gate">
+    <div class="gform">
+      <div class="fkg" role="img" aria-label="FlapKap">
+        <svg class="fkl gh-a" aria-hidden="true" focusable="false"><use href="#fkmark"/></svg>
+        <svg class="fkl gh-b" aria-hidden="true" focusable="false"><use href="#fkmark"/></svg>
+        <svg class="fkl base" aria-hidden="true" focusable="false"><use href="#fkmark"/></svg>
+      </div>
+      <span class="glab">Account Atlas</span>
+      <span class="gsub">FlapKap · HubSpot · Read-only</span>
+      <div class="gmodes" role="radiogroup" aria-label="What a bare record id means">
+        <button type="button" class="gm" role="radio" data-mode="company" aria-checked="true">Company</button>
+        <button type="button" class="gm" role="radio" data-mode="contact" aria-checked="false">Contact</button>
+      </div>
+      <div class="gfield">
+        <span class="gp" aria-hidden="true">&gt;</span>
+        <input id="q" type="text" autocomplete="off" spellcheck="false"
+               placeholder="ENTER DESIGNATION"
+               aria-label="Record id, email address or admin-app user id">
+        <span class="gmirror" id="gmirror" aria-hidden="true"></span>
+        <span class="gcur" id="gcur" aria-hidden="true"></span>
+      </div>
+      <p class="gerr" id="gerr" role="status"></p>
+      <p class="ghint" id="ghint">Company record id &nbsp;·&nbsp; Deal record id &nbsp;·&nbsp; Admin-app user id &nbsp;·&nbsp; Return to acquire</p>
+      <p class="gmap" id="gmapline"></p>
+    </div>
+  </div>
+</div>
+
+<!-- One tooltip for the whole page. It is refilled and repositioned rather
+     than rebuilt, so the plot can be torn down and rebuilt beneath it. -->
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+/*@@ATLAS@@*/
+</script>
+</body></html>

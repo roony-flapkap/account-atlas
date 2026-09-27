@@ -1,0 +1,54 @@
+// The Atlas API. The page lives on GitHub Pages; this Worker is its only backend.
+// Fill the two database_id values after `wrangler d1 create` (see ../docs/pages-worker-setup.md).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "atlas",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+
+  "vars": {
+    // who may sign in: a verified Google account on this Workspace domain, nothing else
+    "ALLOWED_DOMAIN": "flapkap.com",
+    // the OAuth client (Web) from Google Cloud Console; public, not a secret
+    "GOOGLE_CLIENT_ID": "",
+    // where the page is served from; comma-separated, exact origins
+    "ALLOWED_ORIGINS": "https://roony-flapkap.github.io,http://localhost:8080,http://127.0.0.1:8080",
+    // free plan: 100,000 rows written a day, and D1 stops answering when it runs out.
+    // The sync stops for the day at this many, leaving the rest for canvases and webhooks.
+    "SYNC_WRITE_BUDGET": "80000",
+    // free plan: 5,000,000 rows read a day; the SQL console may use this many of them
+    "SQL_READ_BUDGET": "1000000",
+    "SESSION_HOURS": "12"
+  },
+  // secrets (wrangler secret put …), never in this public file:
+  //   HUBSPOT_TOKEN, HUBSPOT_CLIENT_SECRET, SESSION_SECRET, and PORTAL_ID (the HubSpot
+  //   account id: webhooks from any other account are ignored, and the page gets it after sign-in)
+
+  "d1_databases": [
+    // the CRM copy: records, links, changes, segments, sync state. The SQL console reads only this.
+    { "binding": "GRAPH", "database_name": "atlas-graph", "database_id": "00000000-0000-0000-0000-000000000001", "migrations_dir": "migrations/graph" },
+    // the app's own data: canvases (the old artifact store's documents), audit, webhook bookkeeping
+    { "binding": "APP", "database_name": "atlas-app", "database_id": "00000000-0000-0000-0000-000000000002", "migrations_dir": "migrations/app" }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      // one instance: every HubSpot call from every Worker passes its token buckets
+      { "name": "GATE", "class_name": "HubSpotGate" },
+      // one instance: open pages hold a WebSocket here and hear about CRM changes as they land
+      { "name": "HUB", "class_name": "ChangeHub" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["HubSpotGate", "ChangeHub"] }
+  ],
+
+  "triggers": {
+    // every minute: a slice of backfill, or the 15-minute incremental read when due
+    // 02:00 UTC: re-read every link, sweep archived and merged records, prune old rows
+    "crons": ["* * * * *", "0 2 * * *"]
+  },
+
+  "observability": { "enabled": true }
+}

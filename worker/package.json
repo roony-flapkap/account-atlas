@@ -1,0 +1,17 @@
+{
+  "name": "atlas-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply atlas-graph --local && wrangler d1 migrations apply atlas-app --local",
+    "migrate:remote": "wrangler d1 migrations apply atlas-graph --remote && wrangler d1 migrations apply atlas-app --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.2.8",
+    "vitest": "~4.1.0",
+    "wrangler": "^4.141.0"
+  }
+}

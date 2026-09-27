@@ -1,0 +1,38 @@
+# The repo is public. Everything is ignored, then only what builds, tests
+# and runs the product is let back in. Nothing personal, no staff names,
+# no internal notes or endpoints: those stay on this machine only.
+/*
+
+# the build
+!/.gitignore
+!/README.md
+!/build.py
+!/build.sh
+
+# the page: its source, the site's config, and the deploy workflow
+!/src/
+!/web/
+!/.github/
+
+# the Worker: code, migrations and config, not its tests or what npm or wrangler generate
+!/worker/
+/worker/node_modules/
+/worker/.wrangler/
+/worker/test/
+/worker/vitest.config.js
+
+# Local only, never published (listed so the intent is clear; /* already covers them):
+#   CLAUDE.md  docs/  xray/  dist/  build/  .claude/  tests/
+# Tests of every kind stay on this machine: tests/, worker/test/, worker/vitest.config.js.
+# CLAUDE.md, docs/ and the X-Ray page name people and internal endpoints, and
+# dist/atlas.html is the old artifact with the owner and user name tables.
+
+# never, anywhere: secrets, generated output, exports
+.dev.vars
+.env
+.env.*
+node_modules/
+__pycache__/
+*.log
+*.png
+.DS_Store
