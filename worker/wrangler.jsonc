@@ -1,5 +1,5 @@
 // The Atlas API. The page lives on GitHub Pages; this Worker is its only backend.
-// Fill the two database_id values after `wrangler d1 create` (see ../docs/pages-worker-setup.md).
+// The two databases were created in EEUR (the nearest D1 region to the UAE and Egypt).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "atlas",
@@ -27,9 +27,9 @@
 
   "d1_databases": [
     // the CRM copy: records, links, changes, segments, sync state. The SQL console reads only this.
-    { "binding": "GRAPH", "database_name": "atlas-graph", "database_id": "00000000-0000-0000-0000-000000000001", "migrations_dir": "migrations/graph" },
+    { "binding": "GRAPH", "database_name": "atlas-graph", "database_id": "76bf9269-7670-46ef-9380-603b7c626374", "migrations_dir": "migrations/graph" },
     // the app's own data: canvases (the old artifact store's documents), audit, webhook bookkeeping
-    { "binding": "APP", "database_name": "atlas-app", "database_id": "00000000-0000-0000-0000-000000000002", "migrations_dir": "migrations/app" }
+    { "binding": "APP", "database_name": "atlas-app", "database_id": "34d27f25-b358-4989-8513-e47fe60f2d54", "migrations_dir": "migrations/app" }
   ],
 
   "durable_objects": {

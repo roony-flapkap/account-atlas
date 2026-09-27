@@ -277,4 +277,17 @@ s=s.replace("@@ATLAS@@", js)
 # locally as it was published and never rebuilt
 os.makedirs("build", exist_ok=True)
 open("build/atlas.html","w").write(s)
-print("built", len(s), "bytes,", s.count("\n"), "lines")
+
+# 5. the site for GitHub Pages: a whole document of its own, with its config
+#    beside it. Kept out of search engines, and it sends no referrer.
+k=s.index("</style>\n")+len("</style>\n")
+head, body = s[:k], s[k:]
+web=('<!doctype html>\n<html lang="en"><head>\n<meta charset="utf-8">\n'
+     '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+     '<meta name="robots" content="noindex,nofollow">\n<meta name="referrer" content="no-referrer">\n'
+     + head + '<script src="config.js"></script>\n</head><body>\n' + body + "</body></html>\n")
+os.makedirs("build/web", exist_ok=True)
+open("build/web/index.html","w").write(web)
+open("build/web/config.js","w").write(open("web/config.js").read())
+open("build/web/.nojekyll","w").write("")
+print("built", len(s), "bytes,", s.count("\n"), "lines, and build/web/")
