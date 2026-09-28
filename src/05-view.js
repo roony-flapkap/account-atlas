@@ -93,9 +93,20 @@
     // until that one redraw.
     let labelsDirty = false, cK = 1, cTX = 0, cTY = 0, preview = false;
     function commitCamera(){
+      // Swapping the moved picture for the redrawn map must not animate: the
+      // scene's slide (for the zoom buttons) would start from where the
+      // gesture began and replay the whole move. So the swap is made with
+      // transitions off, and they are only let back once the new position
+      // has been taken as the starting point.
+      const was = preview;
+      if (was) svg.classList.add("gsnap");
       scene.setAttribute("transform", "translate(" + f1(TX) + "," + f1(TY) + ") scale(" + (Math.round(K * 1e4) / 1e4) + ")");
       cK = K; cTX = TX; cTY = TY;
-      if (preview){ panel.style.transform = ""; preview = false; }
+      if (was){
+        panel.style.transform = ""; preview = false;
+        void getComputedStyle(scene).transform;     // the new position, settled before transitions return
+        svg.classList.remove("gsnap");
+      }
     }
     function apply(live){
       if (live){
