@@ -29,7 +29,8 @@
     ringMin: 70,
     hiveGap: 56,                    // clear space between two hives
     treeX: 164, treeY: 100, treeSub: 64, treeWrap: 10, blockGap: 120,
-    lodK: 0.5,                      // below this zoom, record labels hide
+    lodK: 0.8,                      // below this zoom, record names hide (held, hovered and neighbouring ones stay)
+    lodSub: 1.2,                    // below this zoom, records' second lines hide
     kMin: 0.05, kMax: 6
   };
   const GOLDEN = 2.399963229728653;

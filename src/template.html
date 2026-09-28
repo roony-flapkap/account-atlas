@@ -777,6 +777,26 @@
   .gedge.efresh{stroke:var(--green)!important;stroke-opacity:.9!important;stroke-dasharray:6 3!important;
     filter:drop-shadow(0 0 3px rgba(69,209,124,.6))}
 
+  /* ---------- a big map, kept light ----------
+     Level of detail: a record's name from 80% zoom, its second line from
+     120% — unless it is held, hovered, picked or next to the held one; the
+     echo links (already said by two spokes) go when the map is zoomed out.
+     While the reader zooms, pans or drags (.gquiet): no transitions, no
+     running animations, no second lines; they come back once it settles. */
+  .gclip{position:relative;overflow:hidden}
+  /* its own layer, so a gesture moves the picture without repainting it */
+  .gpan{transform-origin:0 0;will-change:transform}
+  #gwrap.gfull .gclip{flex:1;min-height:0;min-width:0;display:flex}
+  #gwrap.gfull .gpan{flex:1;min-height:0;min-width:0;display:flex}
+  #gwrap.gfull .gpan svg.graph{width:100%;height:100%}
+  svg.graph.glodsub .gnode .gsubl{display:none}
+  svg.graph.glod .gnode.gsel .glabel,svg.graph.glod .gnode.ghot .glabel,svg.graph.glod .gnode.gpick .glabel,svg.graph.glod .gnode.gadj .glabel{display:inline}
+  svg.graph.glodsub .gnode.gsel .gsubl,svg.graph.glodsub .gnode.ghot .gsubl{display:inline}
+  svg.graph.glod .gedge.n-echo:not(.glit){display:none}
+  svg.graph.gquiet .gscene,svg.graph.gquiet .gnode{transition:none}
+  svg.graph.gquiet .gring,svg.graph.gquiet .ret-spin,svg.graph.gquiet .gspark{animation-play-state:paused}
+  svg.graph.gquiet .gspark,svg.graph.gquiet .gnode .gsubl{display:none}
+
   /* ---------- findings: a sidebar inside the map ---------- */
   .gside{position:absolute;top:8px;right:8px;bottom:8px;width:min(360px,44%);z-index:6;display:flex;flex-direction:column;
     background:rgba(13,14,17,.96);border:1px solid var(--rule);box-shadow:0 0 40px rgba(0,0,0,.55);backdrop-filter:blur(2px)}

@@ -32,12 +32,12 @@
           '<button type="button" class="gtool" id="gundo" data-z="relayout" title="Lay it out again" disabled>&#8634;</button>' +
         "</span></div>" +
         '<div class="gstage">' +
-          '<svg class="graph" id="gsvg" role="application" aria-label="Map of the accounts walked so far">' +
+          '<div class="gclip" id="gclip"><div class="gpan" id="gpan"><svg class="graph" id="gsvg" role="application" aria-label="Map of the accounts walked so far">' +
             '<g class="gscene" id="gscene"><g id="gfields"></g><g id="ghalos"></g><g id="gedges"></g><g id="gsparks"></g><g id="gnodes"></g>' +
               '<g class="reticle" id="greticle"><g class="ret-spin"><rect x="-17" y="-17" width="34" height="34"/>' +
               '<rect x="-12" y="-12" width="24" height="24" transform="rotate(45)"/></g>' +
               '<path class="ret-c" d="M-23,-15 L-23,-23 L-15,-23 M15,-23 L23,-23 L23,-15 M23,15 L23,23 L15,23 M-15,23 L-23,23 L-23,15"/></g>' +
-            "</g></svg>" +
+            "</g></svg></div></div>" +
           '<p class="gempty" id="gempty" hidden>The map is empty — acquire a company to start it</p>' +
           '<div class="ginsp" id="ginsp"></div>' +
           '<div class="gexp" id="gexp"></div>' +
@@ -49,7 +49,11 @@
           '<b>a red dashed line is a record that belongs to two accounts</b> · Esc lets go · ctrl-scroll to zoom</p>' +
       "</div>";
 
-    const wrap = $("gwrap"), svg = $("gsvg"), scene = $("gscene");
+    // the frame the map sits in: it never moves, so sizes and pointer
+    // positions are read from it even while the picture itself is scaled
+    // .gpan carries the picture during a gesture: an HTML box, because
+    // scaling the <svg> itself made Chromium lay out all its text again
+    const wrap = $("gwrap"), svg = $("gsvg"), scene = $("gscene"), box = $("gclip"), panel = $("gpan");
     const gFields = $("gfields"), gHalos = $("ghalos"), gEdges = $("gedges"), gSparks = $("gsparks"), gNodes = $("gnodes");
     const ret = $("greticle"), read = $("gread"), insp = $("ginsp"), xp = $("gexp"), legend = $("glegend");
 
@@ -70,7 +74,7 @@
     // conversion — drag, zoom-at-cursor, the expand buttons — was off by
     // the letterbox margin.
     function measure(){
-      const r = svg.getBoundingClientRect();
+      const r = box.getBoundingClientRect();
       const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
       if (w === vbW && h === vbH) return false;
       // keep whatever was at the middle of the frame at the middle
@@ -79,19 +83,57 @@
       svg.setAttribute("viewBox", "0 0 " + w + " " + h);
       return true;
     }
-    function apply(){
+    // `live`: in the middle of a gesture (a wheel, a pan, a glide to a
+    // record). Moving the map means re-laying-out and repainting every record
+    // and edge in it — measured on a 920-record canvas, that was nearly all
+    // of a frame's time. So during a gesture the picture as last drawn is
+    // moved and scaled whole (the graphics card does that for next to
+    // nothing), and the map itself is moved once, when the gesture ends.
+    // Zoomed out fast, the edges of the frame can show empty for a moment,
+    // until that one redraw.
+    let labelsDirty = false, cK = 1, cTX = 0, cTY = 0, preview = false;
+    function commitCamera(){
       scene.setAttribute("transform", "translate(" + f1(TX) + "," + f1(TY) + ") scale(" + (Math.round(K * 1e4) / 1e4) + ")");
-      svg.classList.toggle("glod", K < G.lodK);
-      if (labelK !== K){ labelK = K; scaleHubLabels(); scaleFieldLabels(); }
+      cK = K; cTX = TX; cTY = TY;
+      if (preview){ panel.style.transform = ""; preview = false; }
     }
-    function zoomAt(vx, vy, f){
+    function apply(live){
+      if (live){
+        const s = K / cK;
+        panel.style.transform = "translate(" + f1(TX - cTX * s) + "px," + f1(TY - cTY * s) + "px) scale(" + (Math.round(s * 1e5) / 1e5) + ")";
+        preview = true;
+        if (labelK !== K) labelsDirty = true;
+        return;
+      }
+      commitCamera();
+      svg.classList.toggle("glod", K < G.lodK);
+      svg.classList.toggle("glodsub", K < G.lodSub);
+      if (labelK !== K || labelsDirty){ labelK = K; labelsDirty = false; scaleHubLabels(); scaleFieldLabels(); }
+    }
+    function zoomAt(vx, vy, f, live){
       const K2 = clamp(K * f, G.kMin, G.kMax);
       if (K2 === K) return;
       TX = vx - (vx - TX) * (K2 / K); TY = vy - (vy - TY) * (K2 / K);
-      K = K2; camSet = true; apply(); changed();
+      K = K2; camSet = true; apply(live); changed();
+    }
+    // While the reader zooms, pans or drags, the map goes quiet: no
+    // transitions, no animations, no second lines — an SVG repaints whole,
+    // so anything moving on it is paid for on every frame. It all comes
+    // back 150 ms after the gesture stops.
+    let quietT = null;
+    function gesture(){
+      if (!svg.classList.contains("gquiet")) svg.classList.add("gquiet");
+      clearTimeout(quietT);
+      quietT = setTimeout(settle, 150);
+    }
+    function settle(){
+      clearTimeout(quietT); quietT = null;
+      svg.classList.remove("gquiet");
+      // the one real redraw, at wherever the gesture left the map
+      if (preview || labelsDirty) apply(false);
     }
     function toView(e){
-      const r = svg.getBoundingClientRect();
+      const r = box.getBoundingClientRect();
       return { x: (e.clientX - r.left) * vbW / (r.width || 1), y: (e.clientY - r.top) * vbH / (r.height || 1) };
     }
     const toWorld = v => ({ x: (v.x - TX) / K, y: (v.y - TY) / K });
@@ -123,7 +165,8 @@
       const t0 = now(), DUR = 460;
       (function step(){
         const t = Math.min(1, (now() - t0) / DUR), e = 1 - Math.pow(1 - t, 3);
-        TX = x0 + (x1 - x0) * e; TY = y0 + (y1 - y0) * e; apply();
+        // the glide moves the picture; the map is moved once, on arrival
+        TX = x0 + (x1 - x0) * e; TY = y0 + (y1 - y0) * e; apply(t < 1);
         if (t < 1) flying = requestAnimationFrame(step);
         else { flying = null; svg.classList.remove("gfly"); land(); }
       })();
@@ -394,6 +437,8 @@
         if (!n.el) return;
         n.el.classList.toggle("gdim", !!near && !near.has(n.key));
         n.el.classList.toggle("gsel", SEL === n.key);
+        // the held record's neighbours keep their names when the map is zoomed out
+        n.el.classList.toggle("gadj", !!near && near.has(n.key) && SEL !== n.key);
       });
       drawSparks();
       layEdges();
@@ -621,6 +666,7 @@
       const v = toView(e), dx = v.x - src.v.x, dy = v.y - src.v.y;
       if (!moved && Math.abs(dx) + Math.abs(dy) > 4){ moved = true; svg.classList.add(drag ? "gmoving" : "gdrag"); tipHide(); }
       if (!moved) return;
+      gesture();
       if (drag){
         drag.start.forEach(s => {
           s.m.x = s.x + dx / K; s.m.y = s.y + dy / K;
@@ -639,10 +685,12 @@
         }
         if (SEL === drag.n.key) placeReticle();
       } else {
-        TX = pan.tx + dx; TY = pan.ty + dy; camSet = true; apply();
+        TX = pan.tx + dx; TY = pan.ty + dy; camSet = true; apply(true);
       }
     }
     function onUp(){
+      // let go: the map is drawn where the pan left it, straight away
+      if (preview) settle();
       if (drag && moved) updateTools();
       if (moved) changed();
       drag = null; pan = null;
@@ -681,11 +729,20 @@
     svg.addEventListener("dblclick", e => e.preventDefault());
     svg.addEventListener("dragstart", e => e.preventDefault());
     // A plain wheel scrolls the page; ctrl/cmd-wheel zooms.
+    // A wheel sends dozens of events a second; they are gathered and the
+    // map is zoomed once per frame, by all of them together.
+    let wheelAcc = null;
     svg.addEventListener("wheel", e => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       const v = toView(e);
-      zoomAt(v.x, v.y, Math.exp(-e.deltaY * 0.0022));
+      gesture();
+      if (!wheelAcc){
+        wheelAcc = { x: v.x, y: v.y, f: 1 };
+        requestAnimationFrame(() => { const w = wheelAcc; wheelAcc = null; zoomAt(w.x, w.y, w.f, true); });
+      }
+      wheelAcc.x = v.x; wheelAcc.y = v.y;
+      wheelAcc.f *= Math.exp(-e.deltaY * 0.0022);
     }, { passive: false });
 
     wrap.addEventListener("click", e => {
