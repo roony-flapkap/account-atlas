@@ -15,8 +15,12 @@
     // where the page is served from; comma-separated, exact origins
     "ALLOWED_ORIGINS": "https://roony-flapkap.github.io,http://localhost:8080,http://127.0.0.1:8080",
     // free plan: 100,000 rows written a day, and D1 stops answering when it runs out.
-    // The sync stops for the day at this many, leaving the rest for canvases and webhooks.
-    "SYNC_WRITE_BUDGET": "80000",
+    // The sync stops for the day at this many, leaving the rest for canvases, walks,
+    // webhooks and its own bookkeeping (all of it together reached 101.7k at 80k).
+    "SYNC_WRITE_BUDGET": "70000",
+    // "off" pauses the nightly rebuild of the duplicate pairs (~2.3M rows read a run);
+    // the findings keep showing the last lists, with the date they were worked out
+    "PAIRS_NIGHTLY": "off",
     // free plan: 5,000,000 rows read a day; the SQL console and the Findings may use this many of them
     "SQL_READ_BUDGET": "2000000",
     "SESSION_HOURS": "12"

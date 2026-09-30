@@ -4,7 +4,7 @@
 // does not spend the day's reads; "fresh" asks again. A finding that needs a
 // part of the copy still being filled says so, and answers with what is there.
 
-import { addUsage, usageToday } from "./sync.js";
+import { addUsage, usageToday, pairsPaused } from "./sync.js";
 import { SqlError } from "./sql.js";
 
 const TTL_MS = 60 * 60000;
@@ -152,7 +152,8 @@ export async function runFinding(env, user, id, { fresh = false } = {}){
     const j = await env.GRAPH.prepare("SELECT finished_at FROM sync_state WHERE job = ?1").bind("pairs:" + f.pairs).first();
     pairsAt = (j && j.finished_at) || null;
     if (!pairsAt) return { id, waiting, count: 0, more: false, rows: [], at: new Date().toISOString(), cached: false, rowsRead: 0,
-                           note: "the first list is worked out tonight, at 02:00 UTC, and every night after" };
+                           note: pairsPaused(env) ? "the nightly rebuild of this list is paused for now, and there is no list yet"
+                                                  : "the first list is worked out tonight, at 02:00 UTC, and every night after" };
   }
   const budget = Number(env.SQL_READ_BUDGET) || 1000000;
   const used = (await usageToday(env)).sql_reads;
@@ -168,7 +169,8 @@ export async function runFinding(env, user, id, { fresh = false } = {}){
   const read = Number(r.meta && r.meta.rows_read) || rows.length;
   await addUsage(env, "sql_reads", read);
   const out = { count: rows.length, more: rows.length >= MAX_ROWS, rows, ms: Date.now() - t0, rowsRead: read };
-  if (pairsAt) out.note = "the pairs were worked out " + pairsAt.slice(0, 16).replace("T", " ") + " UTC";
+  if (pairsAt) out.note = "the pairs were worked out " + pairsAt.slice(0, 16).replace("T", " ") + " UTC" +
+                          (pairsPaused(env) ? "; the nightly rebuild is paused for now" : "");
   const at = new Date().toISOString();
   await env.GRAPH.prepare("INSERT INTO lookups (name, data, at) VALUES (?1, ?2, ?3) ON CONFLICT(name) DO UPDATE SET data = excluded.data, at = excluded.at")
     .bind("finding:" + id, JSON.stringify(out), at).run();

@@ -31,6 +31,7 @@ const POLL_EVERY_MS = 15 * 60000;
 const MODIFIED = { [T.company]: "hs_lastmodifieddate", [T.contact]: "lastmodifieddate", [T.deal]: "hs_lastmodifieddate", [T.lead]: "hs_lastmodifieddate" };
 
 const day = () => new Date().toISOString().slice(0, 10);
+export const pairsPaused = env => env.PAIRS_NIGHTLY === "off";
 
 export async function usageToday(env){
   const r = await env.APP.prepare("SELECT what, n FROM usage WHERE day = ?1").bind(day()).all();
@@ -86,6 +87,7 @@ export async function tick(env, { now = Date.now(), nightly = false } = {}){
       const j = await job(env, name);
       const onDemand = name.startsWith("relink") || name.startsWith("exists") || name.startsWith("pairs");
       if (j.status === "done" || onDemand && j.status !== "queued" && j.status !== "running") continue;
+      if (name.startsWith("pairs") && pairsPaused(env)) continue;   // one queued before the pause waits too
       if (name.startsWith("links:") && !(await ready(env, name))) continue;
       const res = await slice(env, hs, j);
       await addUsage(env, "sync_writes", res.writes || 0);
@@ -220,8 +222,8 @@ async function pollChanges(env, hs, poll){
 }
 
 async function startNightly(env){
-  // the duplicate pairs every night, with whatever the copy holds by then
-  for (const name of PAIR_JOBS){
+  // the duplicate pairs every night, with whatever the copy holds by then (unless paused)
+  if (!pairsPaused(env)) for (const name of PAIR_JOBS){
     const j = await job(env, name);
     j.status = "queued"; j.started_at = new Date().toISOString(); j.error = null;
     await saveJob(env, j);
