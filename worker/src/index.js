@@ -9,7 +9,7 @@ import { HubSpotError } from "./hubspot.js";
 import { SqlError, runSql } from "./sql.js";
 import { walkAuto } from "./walk.js";
 import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh, tombstones, companiesOf } from "./api.js";
-import { listFindings, runFinding } from "./findings.js";
+import { listFindings, runFinding, runCanvasFindings } from "./findings.js";
 import { canEdit, deletePlan, deleteRecords, unlinkPairs, unlinkAll } from "./edit.js";
 import { handleHook } from "./hooks.js";
 import { tick, syncStatus } from "./sync.js";
@@ -132,6 +132,8 @@ async function route(req, env, ctx){
   if (p === "/api/mesh" && M === "POST"){ const b = await readJson(req, 200000); return json(await segmentMesh(env, b.companyIds)); }
   if (p === "/api/sql" && M === "POST"){ const b = await readJson(req, 30000); return json(await runSql(env, user, b.sql)); }
   if (p === "/api/findings" && M === "GET") return json(await listFindings(env));
+  // this canvas's findings: before the route by id, which "canvas" would also match
+  if (p === "/api/findings/canvas" && M === "POST"){ const b = await readJson(req, 300000); return json(await runCanvasFindings(env, user, b.keys)); }
   if ((m = /^\/api\/findings\/([a-z0-9-]+)$/.exec(p)) && M === "POST"){ const b = await readJson(req, 2000); return json(await runFinding(env, user, m[1], { fresh: !!b.fresh })); }
   if (p === "/api/companies-of" && M === "POST"){ const b = await readJson(req, 300000); return json(await companiesOf(env, b.keys)); }
   if (p === "/api/sync/status" && M === "GET") return json(await syncStatus(env));

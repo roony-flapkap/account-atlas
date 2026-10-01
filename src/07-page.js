@@ -65,20 +65,28 @@
                   " on this canvas &nbsp;·&nbsp; <b>" + fmt(c.records) + "</b> records" + (c.shared ? " &nbsp;·&nbsp; <b>" + c.shared + "</b> on more than one" : "");
   }
 
-  // the accounts on this canvas, newest walk first, each a way in
+  // the accounts on this canvas, newest walk first, each a way in: a list in
+  // the map's sidebar (its Accounts tab). Its buttons carry data-rgo, not
+  // data-goto, which the map itself would also act on.
   function renderRoster(){
-    const host = $("roster");
-    if (!MAP.order.length){ host.innerHTML = ""; return; }
-    const rows = MAP.order.map(cid => MAP.accounts[cid]).filter(Boolean)
-      .sort((a, b) => String(b.walkedAt || "").localeCompare(String(a.walkedAt || "")))
-      .map(a => '<button type="button" class="rz' + (isStale(a.walkedAt) ? " stale" : "") + '" data-goto="' + esc(companyKey(a.id)) + '">' +
-                '<span class="rn">' + esc(a.name || "Company " + a.id) + "</span>" +
-                '<span class="rd">walked <b>' + esc(ago(a.walkedAt)) + "</b>" +
-                (a.capped && a.capped.length ? " · capped" : "") + (a.trimmed ? " · trimmed" : "") + "</span></button>").join("");
-    host.innerHTML = '<div class="sh"><h2>On this canvas</h2><p class="hint">' + MAP.order.length + " " + plural(MAP.order.length, "account") +
-      " walked on <b>" + esc(CV.cur ? CV.cur.name : "this canvas") + "</b>. Press one to travel to it — nothing is re-read. " +
-      "A walk older than a fortnight is marked; hold the company and press <b>Re-walk</b> to refresh it.</p></div>" +
-      '<div class="roster frame">' + rows + "</div>";
+    const host = $("gsideacc");
+    if (host){
+      if (!MAP.order.length) host.innerHTML = '<p class="cvnone">No account walked on this canvas yet — acquire a company to start it.</p>';
+      else {
+        const rows = MAP.order.map(cid => MAP.accounts[cid]).filter(Boolean)
+          .sort((a, b) => String(b.walkedAt || "").localeCompare(String(a.walkedAt || "")))
+          .map(a => '<button type="button" class="rz' + (isStale(a.walkedAt) ? " stale" : "") + '" data-rgo="' + esc(companyKey(a.id)) + '">' +
+                    '<span class="rn">' + esc(a.name || "Company " + a.id) + "</span>" +
+                    '<span class="rd">walked <b>' + esc(ago(a.walkedAt)) + "</b>" +
+                    (a.capped && a.capped.length ? " · capped" : "") + (a.trimmed ? " · trimmed" : "") + "</span></button>").join("");
+        host.innerHTML = '<p class="rzlede">' + MAP.order.length + " " + plural(MAP.order.length, "account") +
+          " walked on <b>" + esc(CV.cur ? CV.cur.name : "this canvas") + "</b>. Press one to travel to it — nothing is re-read. " +
+          "A walk older than a fortnight is marked; hold the company and press <b>Re-walk</b> to refresh it.</p>" +
+          '<div class="roster">' + rows + "</div>";
+      }
+    }
+    // what the canvas findings would be asked about has changed with it
+    paintCanvasFindings();
   }
 
   // The doors only part once the map is built behind them: the seam is
@@ -535,9 +543,11 @@
   $("q").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); lookupFromInput(false); } });
   $("q").addEventListener("paste", () => setTimeout(() => lookupFromInput(false), 30));
   $("atlas").addEventListener("click", e => {
-    const b = e.target && e.target.closest && e.target.closest(".rz[data-goto]");
+    const b = e.target && e.target.closest && e.target.closest(".rz[data-rgo]");
     if (!b) return;
-    VIEW.travelTo(b.getAttribute("data-goto"), true);
+    VIEW.travelTo(b.getAttribute("data-rgo"), true);
+    // on a phone the sidebar covers the map: get it out of the way
+    if (window.innerWidth <= 700) sideOpen(false);
     $("gwrap").scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "start" });
   });
   document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { setIdMode(b.getAttribute("data-mode")); focusGate(); }));

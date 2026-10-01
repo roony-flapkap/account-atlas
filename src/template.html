@@ -845,6 +845,12 @@
   svg.graph.glod .gnode.gsel .glabel,svg.graph.glod .gnode.ghot .glabel,svg.graph.glod .gnode.gpick .glabel,svg.graph.glod .gnode.gadj .glabel{display:inline}
   svg.graph.glodsub .gnode.gsel .gsubl,svg.graph.glodsub .gnode.ghot .gsubl{display:inline}
   svg.graph.glod .gedge.n-echo:not(.glit){display:none}
+  /* Names off (the Names button): every record's name and second line go,
+     but the held, hovered, picked and neighbouring ones keep theirs */
+  svg.graph.gnonames .gnode .glabel,svg.graph.gnonames .gnode .gsubl{display:none}
+  svg.graph.gnonames .gnode.gsel .glabel,svg.graph.gnonames .gnode.ghot .glabel,svg.graph.gnonames .gnode.gpick .glabel,svg.graph.gnonames .gnode.gadj .glabel{display:inline}
+  svg.graph.gnonames .gnode.gsel .gsubl,svg.graph.gnonames .gnode.ghot .gsubl{display:inline}
+  .gnames[aria-pressed="true"]{border-color:var(--red);color:var(--red);background:var(--accent-wash)}
   svg.graph.gquiet .gscene,svg.graph.gquiet .gnode,svg.graph.gsnap .gscene{transition:none!important}
   svg.graph.gquiet .gring,svg.graph.gquiet .ret-spin,svg.graph.gquiet .gspark{animation-play-state:paused}
   svg.graph.gquiet .gspark,svg.graph.gquiet .gnode .gsubl{display:none}
@@ -861,6 +867,24 @@
   .gsidetab{position:absolute;top:8px;right:8px;z-index:6;font-family:var(--mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;
     background:var(--panel);color:var(--red);border:1px solid var(--red-dim);padding:6px 10px;cursor:pointer}
   .gsidetab:hover{background:var(--panel-2)}
+  /* its three tabs: Accounts · Findings (this canvas) · Findings Global */
+  .gstabs{display:flex;flex-wrap:wrap;gap:2px;min-width:0;flex:1 1 auto}
+  .gstab{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);
+    background:none;border:1px solid transparent;padding:4px 6px;cursor:pointer;white-space:nowrap}
+  .gside .gsidex{white-space:nowrap;flex:0 0 auto}
+  .gstab:hover{color:var(--ink)}
+  .gstab[aria-selected="true"]{color:var(--red);border-color:var(--red-dim);background:var(--accent-wash)}
+  .gspane{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  .gspane[hidden]{display:none}
+  /* the walked accounts, as a list */
+  .gside .roster{flex-direction:column;flex-wrap:nowrap}
+  .gside .rz{flex:0 0 auto;width:100%}
+  .rzlede{font-size:10px;line-height:1.5;color:var(--dim);letter-spacing:.03em;margin:9px 0 8px}
+  .rzlede b{color:var(--ink);font-weight:400}
+  /* this canvas's findings */
+  .cvfrun{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0 4px}
+  .cvfmeta{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2)}
+  .fdaway{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--amber);border:1px solid var(--amber);padding:0 4px;margin-left:6px;vertical-align:1px}
   .fdgroup{font-size:8.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--dim-2);margin:14px 0 5px}
   .fd{border:1px solid var(--rule);background:var(--panel);margin-top:-1px}
   .fd.open{border-color:var(--red-dim);background:var(--accent-film);position:relative;z-index:1}

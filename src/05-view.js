@@ -17,13 +17,13 @@
     const HOOKS = hooks || {};
     const changed = () => { if (HOOKS.viewChanged) HOOKS.viewChanged(); };
     host.innerHTML =
-      '<div id="roster"></div>' +
       '<div class="sh"><h2>The map</h2><p class="hint">Every company is its own hive. A record sits in the hive of the account that first walked it and reaches across to any other it belongs to — <b>that red dashed line is the finding</b>: the same person, or the same deal, on two accounts. Inside a hive, a link between two records that both hang off the company is already said by their spokes and is drawn as a faint echo.</p></div>' +
       '<div class="graphwrap gwrap frame" id="gwrap" data-hide="">' +
         '<div class="gbar"><span class="gread" id="gread"></span><span class="gtools">' +
           '<button type="button" class="gtool wide gall" id="gxall" data-z="xall" disabled>Expand search · all</button>' +
           '<button type="button" class="gtool wide gmode" data-lay="ring" aria-pressed="true">Hives</button>' +
           '<button type="button" class="gtool wide gmode" data-lay="tree" aria-pressed="false">Hierarchy</button>' +
+          '<button type="button" class="gtool wide gnames" data-z="names" aria-pressed="true" title="Hide the records’ names">Names</button>' +
           '<button type="button" class="gtool wide" data-z="full" title="Expand the map to fill the screen">Expand</button>' +
           '<button type="button" class="gtool wide" data-z="png" title="Save the map as a PNG">PNG</button>' +
           '<button type="button" class="gtool" data-z="out" aria-label="Zoom out" title="Zoom out">&minus;</button>' +
@@ -60,6 +60,20 @@
     const wrap = $("gwrap"), svg = $("gsvg"), scene = $("gscene"), box = $("gclip"), panel = $("gpan");
     const gFields = $("gfields"), gHalos = $("ghalos"), gEdges = $("gedges"), gSparks = $("gsparks"), gNodes = $("gnodes");
     const ret = $("greticle"), read = $("gread"), insp = $("ginsp"), xp = $("gexp"), legend = $("glegend"), unl = $("gunlink");
+
+    // Names off: every record's name and second line go but the held,
+    // hovered, picked and neighbouring ones'. Kept per viewer, as a convenience.
+    const NAMES_KEY = "atlas.names.v1";
+    let namesOn = true;
+    try { namesOn = localStorage.getItem(NAMES_KEY) !== "0"; } catch(e){}
+    function setNames(on, quiet){
+      namesOn = !!on;
+      svg.classList.toggle("gnonames", !namesOn);
+      const b = wrap.querySelector('[data-z="names"]');
+      if (b){ b.setAttribute("aria-pressed", String(namesOn)); b.title = namesOn ? "Hide the records’ names" : "Show the records’ names"; }
+      if (!quiet){ try { localStorage.setItem(NAMES_KEY, namesOn ? "1" : "0"); } catch(e){} }
+    }
+    setNames(namesOn, true);
 
     // view state that outlives any single refresh
     let MODE = "ring", GEO = { mode: "ring", hives: [], fields: [], bounds: boundsOf([]) };
@@ -891,6 +905,7 @@
         if (z === "fit"){ fitView(); changed(); }
         else if (z === "xall") xallPress(b);
         else if (z === "png") savePng(b);
+        else if (z === "names") setNames(!namesOn);
         else if (z === "full") isFull() ? exitFull() : enterFull();
         else if (z === "relayout"){ POS[MODE] = {}; if (MODE === "ring") HOFF = {}; GREW = false; relayout(true); changed(); }
         else zoomAt(vbW / 2, vbH / 2, z === "in" ? 1.3 : 1 / 1.3);

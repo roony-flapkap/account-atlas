@@ -124,9 +124,16 @@
     }));
     return [...out];
   }
-  // A set's records, asked again: its query run again, or its finding asked afresh.
+  // A set's records, asked again: its query run again, or its finding asked
+  // afresh (a canvas finding, of the records on the canvas it is on now).
   async function setKeys(source){
     if (source.kind === "sql"){ const r = await api("/api/sql", { sql: source.sql }); return keysIn(r.rows); }
+    if (source.kind === "canvas"){
+      const keys = MAP.nodes.filter(n => !n.gone).map(n => n.key);
+      const r = keys.length ? await api("/api/findings/canvas", { keys }) : { findings: [] };
+      const f = (r.findings || []).find(x => x.id === source.id);
+      return keysIn(((f && f.rows) || []).map(x => x.keys));
+    }
     const r = await api("/api/findings/" + encodeURIComponent(source.id), { fresh: true });
     return keysIn((r.rows || []).map(x => x.keys));
   }
