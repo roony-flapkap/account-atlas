@@ -850,7 +850,14 @@
   svg.graph.gnonames .gnode .glabel,svg.graph.gnonames .gnode .gsubl{display:none}
   svg.graph.gnonames .gnode.gsel .glabel,svg.graph.gnonames .gnode.ghot .glabel,svg.graph.gnonames .gnode.gpick .glabel,svg.graph.gnonames .gnode.gadj .glabel{display:inline}
   svg.graph.gnonames .gnode.gsel .gsubl,svg.graph.gnonames .gnode.ghot .gsubl{display:inline}
-  .gnames[aria-pressed="true"]{border-color:var(--red);color:var(--red);background:var(--accent-wash)}
+  /* the Names toggle: inside the map, top left, opposite the sidebar's tab;
+     while the inspector is open it waits at the inspector's edge */
+  .gnamesbtn{position:absolute;top:8px;left:8px;z-index:5;font-family:var(--mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;
+    background:var(--panel);color:var(--red);border:1px solid var(--red-dim);padding:6px 10px;cursor:pointer;
+    transition:left 260ms var(--ease),color 130ms var(--ease),border-color 130ms var(--ease)}
+  .gnamesbtn:hover{background:var(--panel-2)}
+  .gnamesbtn[aria-pressed="false"]{color:var(--dim);border-color:var(--rule);text-decoration:line-through}
+  .ginsp.on ~ .gnamesbtn{left:calc(min(340px,46%) + 8px)}
   svg.graph.gquiet .gscene,svg.graph.gquiet .gnode,svg.graph.gsnap .gscene{transition:none!important}
   svg.graph.gquiet .gring,svg.graph.gquiet .ret-spin,svg.graph.gquiet .gspark{animation-play-state:paused}
   svg.graph.gquiet .gspark,svg.graph.gquiet .gnode .gsubl{display:none}

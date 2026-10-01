@@ -23,7 +23,6 @@
           '<button type="button" class="gtool wide gall" id="gxall" data-z="xall" disabled>Expand search · all</button>' +
           '<button type="button" class="gtool wide gmode" data-lay="ring" aria-pressed="true">Hives</button>' +
           '<button type="button" class="gtool wide gmode" data-lay="tree" aria-pressed="false">Hierarchy</button>' +
-          '<button type="button" class="gtool wide gnames" data-z="names" aria-pressed="true" title="Hide the records’ names">Names</button>' +
           '<button type="button" class="gtool wide" data-z="full" title="Expand the map to fill the screen">Expand</button>' +
           '<button type="button" class="gtool wide" data-z="png" title="Save the map as a PNG">PNG</button>' +
           '<button type="button" class="gtool" data-z="out" aria-label="Zoom out" title="Zoom out">&minus;</button>' +
@@ -43,6 +42,8 @@
             "</g></svg></div></div>" +
           '<p class="gempty" id="gempty" hidden>The map is empty — acquire a company to start it</p>' +
           '<div class="ginsp" id="ginsp"></div>' +
+          // inside the map, top left, opposite the sidebar's tab; after the inspector, so it can step aside for it
+          '<button type="button" class="gnamesbtn" data-z="names" aria-pressed="true" title="Hide the records’ names">Names</button>' +
           '<div class="gexp" id="gexp"></div>' +
           '<div class="gtoast" id="gtoast" role="status" aria-live="polite" hidden></div>' +
         "</div>" +
