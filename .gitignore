@@ -22,7 +22,7 @@
 /worker/vitest.config.js
 
 # Local only, never published (listed so the intent is clear; /* already covers them):
-#   CLAUDE.md  docs/  xray/  dist/  build/  .claude/  tests/
+#   CLAUDE.md  docs/  xray/  dist/  build/  .claude/  tests/  exports/
 # Tests of every kind stay on this machine: tests/, worker/test/, worker/vitest.config.js.
 # CLAUDE.md, docs/ and the X-Ray page name people and internal endpoints, and
 # dist/atlas.html is the old artifact with the owner and user name tables.
@@ -31,6 +31,7 @@
 .dev.vars
 .env
 .env.*
+exports/
 node_modules/
 __pycache__/
 *.log
