@@ -1,13 +1,17 @@
-// HubSpot's REST API, read-only, with the private app's token. Every call
-// takes a token from HubSpotGate first, so all Workers together stay under
-// the portal's limits. Nothing here writes to HubSpot: only GET and the
-// read-by-POST endpoints (batch read, search) are ever used.
+// HubSpot's REST API, with the private app's token. Every call takes a
+// token from HubSpotGate first, so all Workers together stay under the
+// portal's limits. Reads only — GET and the read-by-POST endpoints (batch
+// read, search) — except for the two deletes in WRITE_POSTS, which only a
+// client made with { writes: true } can send (edit.js, for the editors):
+// archiving records, and removing the associations between two records.
+// Nothing is ever created, edited or merged.
 
 const BASE = "https://api.hubapi.com";
 // the REST paths accept object type ids, which is what record keys carry
 export const T = { contact: "0-1", company: "0-2", deal: "0-3", lead: "0-136" };
 export const KIND_OF = { "0-1": "contact", "0-2": "company", "0-3": "deal", "0-136": "lead" };
 const READ_POSTS = [/\/batch\/read$/, /\/search$/];
+const WRITE_POSTS = [/^\/crm\/v3\/objects\/0-\d+\/batch\/archive$/, /^\/crm\/v4\/associations\/0-\d+\/0-\d+\/batch\/archive$/];
 
 export class HubSpotError extends Error {
   constructor(status, code, message){ super(message || code); this.status = status; this.code = code; }
@@ -54,6 +58,16 @@ export function hubspotClient(env, opts = {}){
   async function call(method, path, body, kind = "general", reserved = false){
     if (method !== "GET" && !(method === "POST" && READ_POSTS.some(re => re.test(path))))
       throw new HubSpotError(0, "not_read_only", "refusing a HubSpot call that could write: " + method + " " + path);
+    return send(method, path, body, kind, reserved);
+  }
+  // the deletes, and only for a client made to send them
+  async function write(path, body){
+    if (!opts.writes || !WRITE_POSTS.some(re => re.test(path)))
+      throw new HubSpotError(0, "not_allowed", "refusing a HubSpot write: POST " + path);
+    return send("POST", path, body, "general", false);
+  }
+
+  async function send(method, path, body, kind, reserved){
     if (!env.HUBSPOT_TOKEN) throw new HubSpotError(0, "no_token", "HUBSPOT_TOKEN is not set");
     if (!reserved) await reserve(kind, 1);
     for (let attempt = 0; ; attempt++){
@@ -142,5 +156,22 @@ export function hubspotClient(env, opts = {}){
     return { results: (r && r.results) || [], after: r && r.paging && r.paging.next && r.paging.next.after || null };
   }
 
-  return { call, batchRead, assoc, search, listPage, reserve, prepay, stats };
+  const client = { call, batchRead, assoc, search, listPage, reserve, prepay, stats };
+  if (!opts.writes) return client;
+
+  // Records archived, 100 a call: HubSpot keeps them in its recycle bin for
+  // 90 days. Archiving is idempotent, so a retried call does no harm.
+  async function archive(type, ids){
+    for (const p of chunk([...new Set(ids.map(String))], 100))
+      await write("/crm/v3/objects/" + type + "/batch/archive", { inputs: p.map(id => ({ id })) });
+  }
+  // Every association (all labels) between each pair: [[fromId, toId], …].
+  async function unlink(from, to, pairs){
+    const by = new Map();
+    for (const [a, b] of pairs){ if (!by.has(String(a))) by.set(String(a), []); by.get(String(a)).push(String(b)); }
+    const inputs = [];
+    for (const [a, list] of by) for (const p of chunk(list, 100)) inputs.push({ from: { id: a }, to: p.map(id => ({ id })) });
+    for (const p of chunk(inputs, 100)) await write("/crm/v4/associations/" + from + "/" + to + "/batch/archive", { inputs: p });
+  }
+  return Object.assign(client, { archive, unlink });
 }

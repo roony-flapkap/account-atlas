@@ -125,7 +125,16 @@ export async function applyEvents(env, events, { at = new Date().toISOString() }
     }
   }
   if (deleted.length){
-    for (const d of deleted) changes.push(...await applyDeletions(env, [d.key], { at: d.at }));
+    // a record already tombstoned (deleted from the map, or found gone by a
+    // walk) has been reported once: HubSpot's own word on it changes nothing
+    const r = await env.GRAPH.prepare("SELECT key FROM records WHERE key IN (SELECT value FROM json_each(?1)) AND deleted_at IS NOT NULL AND merged_into IS NULL")
+      .bind(JSON.stringify(deleted.map(d => d.key))).all();
+    const told = new Set((r.results || []).map(x => x.key));
+    for (const d of deleted){
+      if (told.has(d.key)) continue;
+      told.add(d.key);
+      changes.push(...await applyDeletions(env, [d.key], { at: d.at }));
+    }
   }
 
   const last = await recordChanges(env, changes, "webhook", at);

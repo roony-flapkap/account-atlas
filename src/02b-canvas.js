@@ -218,13 +218,15 @@
   // goes back where it was — then its expansions in the order they were
   // made, each only if the record it came out of is still on the map.
   async function loadCanvas(c){
-    resetMap();
     CV.skipped = [];
     const db = await use("db");
-    if (!db){ DB_STATE = { known: true, up: false, why: "not available in this view" }; return 0; }
+    if (!db){ resetMap(); DB_STATE = { known: true, up: false, why: "not available in this view" }; return 0; }
     let got;
     try { got = await canvasDocs(c); }
-    catch(e){ DB_STATE = { known: true, up: false, why: why(e) }; return 0; }
+    catch(e){ resetMap(); DB_STATE = { known: true, up: false, why: why(e) }; return 0; }
+    // emptied only once the documents are in hand, and rebuilt in one go: an
+    // empty map while they were read let a click on a record find nothing
+    resetMap();
     DB_STATE = { known: true, up: true, why: "connected" };
     const first = d => String(d.firstWalkedAt || d.walkedAt || "");
     const docs = got.accounts.map(s => s.data()).filter(d => d && d.companyId)

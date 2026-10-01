@@ -11,6 +11,7 @@
     const me = await window.ATLAS.ready;
     PORTAL = String(me.portal || "");
     OPERATOR = String(me.user.name || me.user.email || "—").toUpperCase();
+    CAN_EDIT = !!me.canEdit;
     mountChrome(me);
     mountFindings();
     logReset();

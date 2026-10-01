@@ -27,7 +27,8 @@
   },
   // secrets (wrangler secret put …), never in this public file:
   //   HUBSPOT_TOKEN, HUBSPOT_CLIENT_SECRET, SESSION_SECRET, and PORTAL_ID (the HubSpot
-  //   account id: webhooks from any other account are ignored, and the page gets it after sign-in)
+  //   account id: webhooks from any other account are ignored, and the page gets it after sign-in),
+  //   and EDITORS: who may delete in HubSpot from the map, comma-separated addresses (unset: nobody)
 
   "d1_databases": [
     // the CRM copy: records, links, changes, segments, sync state. The SQL console reads only this.

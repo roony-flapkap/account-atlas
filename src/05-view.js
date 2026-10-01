@@ -37,10 +37,14 @@
               '<g class="reticle" id="greticle"><g class="ret-spin"><rect x="-17" y="-17" width="34" height="34"/>' +
               '<rect x="-12" y="-12" width="24" height="24" transform="rotate(45)"/></g>' +
               '<path class="ret-c" d="M-23,-15 L-23,-23 L-15,-23 M15,-23 L23,-23 L23,-15 M23,15 L23,23 L15,23 M-15,23 L-23,23 L-23,15"/></g>' +
+              // an editor's unlink control: it rides the link nearest the cursor
+              '<g class="gunlink" id="gunlink" aria-hidden="true"><circle class="guhit" r="14"/><circle class="gub" r="8.5"/>' +
+              '<path class="gut" d="M-3.4,-2.6 H3.4 M-1.2,-2.6 V-3.8 H1.2 V-2.6 M-2.6,-2.6 L-2.1,3.7 H2.1 L2.6,-2.6 M-0.8,-0.7 V2 M0.8,-0.7 V2"/></g>' +
             "</g></svg></div></div>" +
           '<p class="gempty" id="gempty" hidden>The map is empty — acquire a company to start it</p>' +
           '<div class="ginsp" id="ginsp"></div>' +
           '<div class="gexp" id="gexp"></div>' +
+          '<div class="gtoast" id="gtoast" role="status" aria-live="polite" hidden></div>' +
         "</div>" +
         '<div class="legend" id="glegend"></div>' +
         '<p class="ghint2">Hover a record to read it · <b>click to open it in full</b> · drag it to move it — drag a company and its hive comes with it · ' +
@@ -55,7 +59,7 @@
     // scaling the <svg> itself made Chromium lay out all its text again
     const wrap = $("gwrap"), svg = $("gsvg"), scene = $("gscene"), box = $("gclip"), panel = $("gpan");
     const gFields = $("gfields"), gHalos = $("ghalos"), gEdges = $("gedges"), gSparks = $("gsparks"), gNodes = $("gnodes");
-    const ret = $("greticle"), read = $("gread"), insp = $("ginsp"), xp = $("gexp"), legend = $("glegend");
+    const ret = $("greticle"), read = $("gread"), insp = $("ginsp"), xp = $("gexp"), legend = $("glegend"), unl = $("gunlink");
 
     // view state that outlives any single refresh
     let MODE = "ring", GEO = { mode: "ring", hives: [], fields: [], bounds: boundsOf([]) };
@@ -133,6 +137,7 @@
     // back 150 ms after the gesture stops.
     let quietT = null;
     function gesture(){
+      if (uEd) linkHide();
       if (!svg.classList.contains("gquiet")) svg.classList.add("gquiet");
       clearTimeout(quietT);
       quietT = setTimeout(settle, 150);
@@ -303,18 +308,22 @@
     }
     function scaleHubLabels(){ MAP.nodes.forEach(n => { if (n.below && n.el) scaleHubLabel(n); }); }
 
-    function edgeD(A, B, ed){
+    // An edge's shape, as its end and control points: a straight line, a
+    // curve (an echo), or the hierarchy's S-bend. It is drawn from these,
+    // and measured against the cursor for the unlink control.
+    function edgeGeo(A, B, ed){
       if (MODE === "tree"){
         const my = (A.y + B.y) / 2;
-        return "M" + f1(A.x) + "," + f1(A.y) + " C" + f1(A.x) + "," + f1(my) + " " + f1(B.x) + "," + f1(my) + " " + f1(B.x) + "," + f1(B.y);
+        return [A, { x: A.x, y: my }, { x: B.x, y: my }, B];
       }
       // an echo bows toward the middle of ITS OWN hive
       const c = ed.rel === "link" && A.hive && A.hive === B.hive ? MAP.byKey[A.hive] : null;
-      if (c && c !== A && c !== B){
-        const qx = c.x + ((A.x + B.x) / 2 - c.x) * 0.34, qy = c.y + ((A.y + B.y) / 2 - c.y) * 0.34;
-        return "M" + f1(A.x) + "," + f1(A.y) + " Q" + f1(qx) + "," + f1(qy) + " " + f1(B.x) + "," + f1(B.y);
-      }
-      return "M" + f1(A.x) + "," + f1(A.y) + " L" + f1(B.x) + "," + f1(B.y);
+      if (c && c !== A && c !== B) return [A, { x: c.x + ((A.x + B.x) / 2 - c.x) * 0.34, y: c.y + ((A.y + B.y) / 2 - c.y) * 0.34 }, B];
+      return [A, B];
+    }
+    function edgeD(A, B, ed){
+      const g = edgeGeo(A, B, ed), P = p => f1(p.x) + "," + f1(p.y);
+      return "M" + P(g[0]) + (g.length === 4 ? " C" + P(g[1]) + " " + P(g[2]) + " " + P(g[3]) : g.length === 3 ? " Q" + P(g[1]) + " " + P(g[2]) : " L" + P(g[1]));
     }
     // Weight and the filter classes are written together from the edge's
     // CURRENT state. The filter classes used to be fixed at creation, so an
@@ -337,7 +346,8 @@
         if (w === "eecho") cls.push("n-echo");
         if (ed.cross) cls.push("n-cross");
         // a link HubSpot has removed fades; one it has added (not yet walked in) glows
-        if (ed.gone) cls.push("egone"); else if (ed.fresh) cls.push("efresh");
+        if (ed.gone) cls.push("egone"); else if (ed.pend) cls.push("epend"); else if (ed.fresh) cls.push("efresh");
+        if (ed === uEd) cls.push("eunl");
         if (touches) cls.push("glit"); else if (near) cls.push("gdim");
         p.setAttribute("class", cls.join(" "));
         const s = sparkEls.get(ed.id);
@@ -439,6 +449,7 @@
       pendingCam = null;
       updateTools();
       nearPass(lastMove);
+      linkPass(lastMove);
     }
 
     /* ---------------- selection ---------------- */
@@ -537,13 +548,18 @@
         if (acc) acts += '<button type="button" class="act" data-act="forget" data-cid="' + esc(n.id) + '">Forget</button>';
       }
       acts += '<button type="button" class="act" data-goto="">Let go</button>';
+      const list = insp.querySelector(".edlist"), listTop = list ? list.scrollTop : 0;
       insp.innerHTML =
         '<div class="ik"><span>' + esc(classify(n)) + '</span><span class="iid">record ' + esc(n.id) + "</span></div>" +
         '<div class="iv">' + esc(n.e.label) + "</div>" +
         (note ? '<div class="isub' + (n.mis || n.gone || n.kind === "detached" ? " bad" : "") + '">' + esc(note) + "</div>" : "") +
         rows + walkLine +
         '<div class="irow"><span class="il">Linked to</span><span class="iv2">' + linkHtml + "</span></div>" +
-        '<div class="iacts">' + acts + "</div>";
+        '<div class="iacts">' + acts + "</div>" +
+        // deleting in HubSpot: the editors' section (07d-edit.js), empty for everyone else
+        (HOOKS.editHtml ? HOOKS.editHtml(n) : "");
+      const list2 = insp.querySelector(".edlist");
+      if (list2 && listTop) list2.scrollTop = listTop;
       insp.classList.add("on");
     }
 
@@ -628,6 +644,86 @@
 
     const hitNode = e => { const t = e.target && e.target.closest && e.target.closest("[data-k]"); return t ? MAP.byKey[t.getAttribute("data-k")] : null; };
     const hitButton = e => !!(e.target && e.target.closest && e.target.closest(".gxb"));
+    const hitUnlink = e => !!(e.target && e.target.closest && e.target.closest(".gunlink"));
+
+    /* ---------------- unlinking, from the link itself ----------------
+       For the Atlas's editors: near a link, a delete control rides it at
+       the point nearest the cursor, and a click removes that association in
+       HubSpot (after a moment in which it can be undone: 07d-edit.js). Only
+       links that are HubSpot associations get one, never a shared-number
+       line, a link already removed, or one hidden by a filter or the zoom;
+       and never at a record or its expand button, which keep the cursor. */
+    let uEd = null, uRaf = 0, uEv = null;
+    const U_REACH = 16;                     // how near the link, in screen pixels
+    const bez = (g, t) => {
+      const u = 1 - t;
+      return g.length === 3
+        ? { x: u * u * g[0].x + 2 * u * t * g[1].x + t * t * g[2].x, y: u * u * g[0].y + 2 * u * t * g[1].y + t * t * g[2].y }
+        : { x: u * u * u * g[0].x + 3 * u * u * t * g[1].x + 3 * u * t * t * g[2].x + t * t * t * g[3].x,
+            y: u * u * u * g[0].y + 3 * u * u * t * g[1].y + 3 * u * t * t * g[2].y + t * t * t * g[3].y };
+    };
+    // the point of an edge nearest to p (a curve is followed as 24 short lines)
+    function nearestOn(g, p){
+      const pts = g.length === 2 ? g : Array.from({ length: 25 }, (_, i) => bez(g, i / 24));
+      let bx = 0, by = 0, bd = Infinity;
+      for (let i = 0; i + 1 < pts.length; i++){
+        const a = pts[i], b = pts[i + 1], dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy;
+        const t = L ? clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / L, 0, 1) : 0;
+        const x = a.x + t * dx, y = a.y + t * dy, d = Math.hypot(p.x - x, p.y - y);
+        if (d < bd){ bd = d; bx = x; by = y; }
+      }
+      return { x: bx, y: by, d: bd };
+    }
+    function linkHide(){
+      if (uEd && uEd.el) uEd.el.classList.remove("eunl");
+      uEd = null; unl.classList.remove("on");
+    }
+    // at most once a frame, however fast the mouse moves
+    function linkLater(e){ uEv = e; if (!uRaf) uRaf = requestAnimationFrame(() => { uRaf = 0; linkPass(uEv); }); }
+    function linkPass(e){
+      if (!e || !HOOKS.canEdit || !HOOKS.canEdit() || drag || pan || svg.classList.contains("gquiet")){ linkHide(); return; }
+      const w = toWorld(toView(e)), reach = U_REACH / K;
+      // a record, or the picked record's expand button, has the cursor
+      if (MAP.nodes.some(n => n.el && !isHidden(n) && Math.hypot(w.x - n.x, w.y - n.y) < nodeR(n) + 10 / K)){ linkHide(); return; }
+      if (picked && Math.abs(w.x - picked.x) < 52 && Math.abs(w.y - picked.y - btnDrop(picked)) < 15){ linkHide(); return; }
+      const hide = " " + (wrap.getAttribute("data-hide") || "") + " ", lod = K < G.lodK;
+      let best = null, bp = null, bd = Infinity;
+      MAP.edges.forEach(ed => {
+        if (ed.rel === "detached" || ed.gone || ed.pend || !ed.el) return;
+        const A = MAP.byKey[ed.a], B = MAP.byKey[ed.b];
+        if (!A || !B || A.gone || B.gone) return;
+        const g = edgeGeo(A, B, ed);
+        // a box around the edge first: nearly all are nowhere near
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const q of g){ if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y; }
+        if (w.x < x0 - reach || w.x > x1 + reach || w.y < y0 - reach || w.y > y1 + reach) return;
+        // hidden by a legend filter (its n-* classes), or an echo withdrawn at this zoom
+        for (const c of ed.el.classList) if (c.startsWith("n-") && hide.indexOf(" " + c.slice(2) + " ") >= 0) return;
+        if (lod && ed.el.classList.contains("n-echo") && !ed.el.classList.contains("glit")) return;
+        const p = nearestOn(g, w);
+        if (p.d > reach || p.d >= bd) return;
+        // not where the link runs into a record
+        if (Math.hypot(p.x - A.x, p.y - A.y) < nodeR(A) + 8 / K || Math.hypot(p.x - B.x, p.y - B.y) < nodeR(B) + 8 / K) return;
+        best = ed; bp = p; bd = p.d;
+      });
+      if (!best){ linkHide(); return; }
+      if (uEd !== best){ if (uEd && uEd.el) uEd.el.classList.remove("eunl"); uEd = best; best.el.classList.add("eunl"); }
+      // the same size on screen at any zoom
+      unl.setAttribute("transform", "translate(" + f1(bp.x) + "," + f1(bp.y) + ") scale(" + (Math.round(1e4 / K) / 1e4) + ")");
+      unl.classList.add("on");
+    }
+    function tipLink(ed, e){
+      const k = "unlink|" + ed.id;
+      if (tipKey !== k){
+        tipKey = k;
+        const A = MAP.byKey[ed.a], B = MAP.byKey[ed.b];
+        TIP.innerHTML = '<div class="tc">Remove this link in HubSpot</div><div class="tn">' + esc(A ? A.e.label : ed.a) + "</div>" +
+          '<div class="ts">and ' + esc(B ? B.e.label : ed.b) + "</div>" +
+          '<div class="tfoot"><span class="tpre">Click to unlink · 5 s to undo · both records stay</span></div>';
+        TIP.style.setProperty("--node", "var(--alert)");
+      }
+      TIP.classList.add("on"); tipAt(e);
+    }
 
     svg.addEventListener("mouseover", e => {
       const n = hitNode(e); if (!n) return;
@@ -640,19 +736,20 @@
     });
     svg.addEventListener("mousemove", e => {
       const n = hitNode(e);
-      if (n) tipShow(n.key, e); else tipHide();
+      if (n) tipShow(n.key, e); else if (uEd && hitUnlink(e)) tipLink(uEd, e); else tipHide();
       lastMove = { clientX: e.clientX, clientY: e.clientY };
       nearPass(e);
+      linkLater(lastMove);
     });
     // the cursor has gone, so a later relayout must not revive a button for it
-    svg.addEventListener("mouseleave", () => { tipHide(); lastMove = null; nearPass(null); });
+    svg.addEventListener("mouseleave", () => { tipHide(); lastMove = null; nearPass(null); linkHide(); });
 
     /* ---------------- pressing, dragging, panning ---------------- */
     let pan = null, drag = null, moved = false, pressHeld = false;
     svg.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
       moved = false;                      // cleared FIRST, or a press on a button inherits the last drag
-      if (hitButton(e)) return;
+      if (hitButton(e) || hitUnlink(e)) return;
       const n = hitNode(e), v = toView(e);
       if (n){
         // the press holds the record, so a drag lights its paths on the way
@@ -712,6 +809,13 @@
     }
     svg.addEventListener("click", e => {
       if (moved) return;                  // a drag does nothing when let go
+      if (hitUnlink(e)){
+        e.preventDefault();
+        const ed = uEd;
+        linkHide(); tipHide();
+        if (ed && HOOKS.unlink) HOOKS.unlink(ed);
+        return;
+      }
       const n = hitNode(e);
       if (n && hitButton(e)){
         e.preventDefault();
@@ -757,8 +861,12 @@
     }, { passive: false });
 
     wrap.addEventListener("click", e => {
-      const b = e.target && e.target.closest && e.target.closest("[data-z],[data-tog],[data-goto],[data-lay],[data-act]");
+      const b = e.target && e.target.closest && e.target.closest("[data-z],[data-tog],[data-goto],[data-lay],[data-act],[data-ed]");
       if (!b) return;
+      if (b.hasAttribute("data-ed")){
+        if (!b.disabled && HOOKS.editAct) HOOKS.editAct(b.getAttribute("data-ed"), b, SEL ? MAP.byKey[SEL] : null);
+        return;
+      }
       if (b.hasAttribute("data-act")){
         const act = b.getAttribute("data-act"), cid = b.getAttribute("data-cid");
         if (act === "walk") acquire({ kind: "company", value: cid }, { force: !!MAP.accounts[cid] });
@@ -865,7 +973,7 @@
         const x0 = b.x0 - 40, y0 = b.y0 - 40, w = Math.max(200, b.x1 - b.x0 + 80), h = Math.max(160, b.y1 - b.y0 + 80);
         clone.querySelector("#gscene").removeAttribute("transform");
         clone.querySelectorAll(".glabel").forEach(t => { t.textContent = String(t.textContent || "").toUpperCase(); });
-        clone.querySelectorAll(".gxb,.reticle").forEach(t => t.remove());
+        clone.querySelectorAll(".gxb,.reticle,.gunlink").forEach(t => t.remove());
         clone.setAttribute("xmlns", SVGNS);
         clone.setAttribute("viewBox", [x0, y0, w, h].map(f1).join(" "));
         clone.setAttribute("width", Math.round(w)); clone.setAttribute("height", Math.round(h));
@@ -908,10 +1016,19 @@
 
     /*@@EXPAND@@*/
 
+    // a record ticked or unticked in the delete checklist
+    insp.addEventListener("change", e => {
+      const c = e.target && e.target.closest && e.target.closest("[data-edk]");
+      if (c && HOOKS.editTick) HOOKS.editTick(c.getAttribute("data-edk"), c.checked);
+    });
+
     measure();
     return {
       refresh, travelTo, exitFull, letGo,
       hasSelection: () => !!SEL,
+      // what an edit changes without moving anything: the inspector, the links' marks
+      repaintInspector: () => paintInspector(),
+      repaintEdges: () => layEdges(),
       resetPositions(){ POS = { ring: {}, tree: {} }; HOFF = {}; GREW = false; SEL = null; },
       // The arrangement a canvas saves: layout, dragged records and hives,
       // filters, and where the camera was — its centre in the map, so it

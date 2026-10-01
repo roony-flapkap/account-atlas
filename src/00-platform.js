@@ -152,7 +152,8 @@
   async function start(){
     try {
       const me = await api("/api/me");
-      ATLAS.me = { user: me.user, portal: me.portal || "" };
+      // canEdit: this person may delete in HubSpot from the map (the Worker's EDITORS)
+      ATLAS.me = { user: me.user, portal: me.portal || "", canEdit: !!me.canEdit };
       hideSignIn();
       readyResolve(ATLAS.me);
       live();

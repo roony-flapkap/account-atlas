@@ -322,21 +322,31 @@
     const ids = [...CH.pending].filter(id => MAP.accounts[id]);
     if (!ids.length) return;
     ACQUIRING = true; CH.refreshing = true; paintCh();
-    let ok = 0, failed = 0;
     const note = t => { const n = $("chnote"); if (n) n.textContent = t || ""; };
     try {
-      await stopExpansions();
-      for (let i = 0; i < ids.length; i++){
-        note("Re-walking " + (MAP.accounts[ids[i]].name || "company " + ids[i]) + " · " + (i + 1) + " of " + ids.length);
-        try { const r = await walkCore(ids[i], QUIET_R, { mode: "live" }); if (r.ok) ok++; else failed++; CH.pending.delete(ids[i]); }
-        catch(e){ failed++; if (e && e.code === "no_identity") break; }
-      }
-      await rebuildFromStore();
-      reapplyLinkMarks();
-      await markTombstones();
-      VIEW.refresh(); renderRoster(); paintGateMap();
+      const { ok, failed } = await rewalkAccounts(ids, note);
       note(ok + " " + plural(ok, "account") + " refreshed" + (failed ? " · " + failed + " could not be read" : "") + ".");
     } finally { ACQUIRING = false; CH.refreshing = false; saveChLocal(); paintCh(); paintChChip(); }
+  }
+  // Walks accounts again, live, then rebuilds the map from the store, so
+  // what has left them leaves the map too. The caller holds the lock.
+  // opts.drop: accounts were also taken off the canvas just before.
+  async function rewalkAccounts(ids, note, opts){
+    opts = opts || {};
+    let ok = 0, failed = 0;
+    await stopExpansions();
+    for (let i = 0; i < ids.length; i++){
+      if (!MAP.accounts[ids[i]]) continue;
+      note("Re-walking " + (MAP.accounts[ids[i]].name || "company " + ids[i]) + " · " + (i + 1) + " of " + ids.length);
+      try { const r = await walkCore(ids[i], QUIET_R, { mode: "live" }); if (r.ok) ok++; else failed++; CH.pending.delete(ids[i]); }
+      catch(e){ failed++; if (e && e.code === "no_identity") break; }
+    }
+    await rebuildFromStore();
+    if (opts.drop){ await pruneExpansions(); writeMeta(CV.cur, { count: MAP.order.length }).catch(() => {}); }
+    reapplyLinkMarks();
+    await markTombstones();
+    VIEW.refresh(); renderRoster(); paintGateMap();
+    return { ok, failed };
   }
 
   /* ---------------- the SQL console ---------------- */

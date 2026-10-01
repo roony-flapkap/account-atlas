@@ -7,7 +7,13 @@
     viewChanged: scheduleViewSave,
     expanded: (node, r) => saveExpansion(node, r),
     needFacts: n => fetchFacts(n),
-    fileTag: () => CV.cur ? slug(CV.cur.name) : ""
+    fileTag: () => CV.cur ? slug(CV.cur.name) : "",
+    // deleting in HubSpot, for the editors (section 16)
+    canEdit: () => CAN_EDIT,
+    unlink: ed => queueUnlink(ed),
+    editHtml: n => editHtml(n),
+    editAct: (act, btn, n) => editAct(act, btn, n),
+    editTick: (key, on) => editTick(key, on)
   });
 
   let SAVE_NOTE = "";
@@ -36,7 +42,8 @@
       const all = kinds.every(k => c[k] && c[k].done);
       const n = kinds.reduce((t, k) => t + ((c[k] && c[k].records) || 0), 0);
       chip.className = "chip on";
-      txt.textContent = "HubSpot · read-only · " + (all ? "SQL copy complete" : "SQL copy filling · " + fmt(n) + " records");
+      // an editor may delete from the map; for everyone else the Atlas only reads
+      txt.textContent = "HubSpot · " + (CAN_EDIT ? "deletes allowed" : "read-only") + " · " + (all ? "SQL copy complete" : "SQL copy filling · " + fmt(n) + " records");
       chip.title = kinds.map(k => k + " " + fmt((c[k] || {}).records || 0) + ((c[k] || {}).done ? " (all)" : "")).join(" · ") +
         (s.today ? " · today " + fmt(s.today.sync_writes) + " of " + fmt(s.today.writeBudget) + " rows written" : "");
     } catch(e){

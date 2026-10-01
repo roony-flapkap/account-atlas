@@ -8,6 +8,9 @@
   // signed in. The page is public, so it carries neither.
   let PORTAL = "";
   let OPERATOR = "—";
+  // whether this person is one of the Atlas's editors, who may delete in
+  // HubSpot from the map (section 16); the Worker checks it again on every call
+  let CAN_EDIT = false;
   const REDUCED = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   // Opening a record out: one request to the Worker, up to 40 records of

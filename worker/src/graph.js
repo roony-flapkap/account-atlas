@@ -201,6 +201,23 @@ export async function applyOneLink(env, a, b, removed, { typeId = null, label = 
   return true;
 }
 
+// Links removed in HubSpot from the map (edit.js): [[a, b], …], both
+// directions, in one statement. What the copy held of them is returned
+// first, so the audit can say what was there.
+export async function applyUnlinks(env, pairs){
+  const out = [];
+  await inChunks(pairs, 400, async part => {
+    const both = part.flatMap(([a, b]) => [[a, b], [b, a]]);
+    const [had] = await env.GRAPH.batch([
+      env.GRAPH.prepare("SELECT l.a AS a, l.b AS b, l.type_id AS type_id, l.label AS label FROM json_each(?1) j " +
+        "JOIN links l ON l.a = json_extract(j.value,'$[0]') AND l.b = json_extract(j.value,'$[1]')").bind(J(part)),
+      env.GRAPH.prepare("DELETE FROM links WHERE (a, b) IN (SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]') FROM json_each(?1))").bind(J(both))
+    ]);
+    out.push(...(had.results || []));
+  });
+  return out;
+}
+
 // A record deleted (or archived) in HubSpot: kept as a tombstone so a canvas
 // that holds it can show it struck through; its links and numbers go.
 export async function applyDeletions(env, keys, { at = now(), mergedInto = null } = {}){

@@ -10,6 +10,7 @@ import { SqlError, runSql } from "./sql.js";
 import { walkAuto } from "./walk.js";
 import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh, tombstones, companiesOf } from "./api.js";
 import { listFindings, runFinding } from "./findings.js";
+import { canEdit, deletePlan, deleteRecords, unlinkPairs, unlinkAll } from "./edit.js";
 import { handleHook } from "./hooks.js";
 import { tick, syncStatus } from "./sync.js";
 import { WS_PROTOCOL } from "./hub.js";
@@ -105,8 +106,9 @@ async function route(req, env, ctx){
   if (!p.startsWith("/api/")) return failure(404, "not_found", "no such route");
   const user = await signedIn(req, env);
   let m;
-  // the HubSpot account id is given out only after sign-in: the public page carries none
-  if (p === "/api/me" && M === "GET") return json({ user, portal: env.PORTAL_ID || null });
+  // the HubSpot account id is given out only after sign-in: the public page carries none;
+  // canEdit says whether this person may delete in HubSpot (edit.js)
+  if (p === "/api/me" && M === "GET") return json({ user, portal: env.PORTAL_ID || null, canEdit: canEdit(env, user) });
   if (p === "/api/db" && M === "POST") return json(await storeOp(env, user, await readJson(req)));
 
   if (p === "/api/walk" && M === "POST"){
@@ -133,6 +135,11 @@ async function route(req, env, ctx){
   if ((m = /^\/api\/findings\/([a-z0-9-]+)$/.exec(p)) && M === "POST"){ const b = await readJson(req, 2000); return json(await runFinding(env, user, m[1], { fresh: !!b.fresh })); }
   if (p === "/api/companies-of" && M === "POST"){ const b = await readJson(req, 300000); return json(await companiesOf(env, b.keys)); }
   if (p === "/api/sync/status" && M === "GET") return json(await syncStatus(env));
+  // deleting from the map: the editors only, and only these two kinds of write
+  if (p === "/api/edit/plan" && M === "POST"){ const b = await readJson(req, 2000); return json(await deletePlan(env, user, b.key)); }
+  if (p === "/api/edit/delete" && M === "POST"){ const b = await readJson(req, 60000); return json(await deleteRecords(env, user, b.keys)); }
+  if (p === "/api/edit/unlink" && M === "POST"){ const b = await readJson(req, 80000); return json(await unlinkPairs(env, user, b.pairs)); }
+  if (p === "/api/edit/unlink-all" && M === "POST"){ const b = await readJson(req, 2000); return json(await unlinkAll(env, user, b.key)); }
   return failure(404, "not_found", "no such route");
 }
 

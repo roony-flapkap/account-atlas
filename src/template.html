@@ -777,6 +777,58 @@
   .gedge.efresh{stroke:var(--green)!important;stroke-opacity:.9!important;stroke-dasharray:6 3!important;
     filter:drop-shadow(0 0 3px rgba(69,209,124,.6))}
 
+  /* ---------- deleting from the map (the editors only) ----------
+     The control that rides a link, at the point nearest the cursor: drawn
+     in the scene and scaled against the zoom, so it is one size on screen. */
+  .gunlink{display:none;cursor:pointer}
+  .gunlink.on{display:inline}
+  svg.graph.gquiet .gunlink,svg.graph.gexport .gunlink{display:none}
+  .gunlink .guhit{fill:transparent;stroke:none}
+  .gunlink .gub{fill:var(--void);fill-opacity:.94;stroke:var(--alert);stroke-width:1.2}
+  .gunlink .gut{fill:none;stroke:var(--alert);stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round}
+  .gunlink:hover .gub{fill:var(--alert);fill-opacity:1}
+  .gunlink:hover .gut{stroke:var(--void)}
+  .gedge.eunl{stroke:var(--alert)!important;stroke-opacity:.95!important;stroke-width:2.2!important;stroke-dasharray:none!important}
+  /* clicked, and going in a moment unless undone */
+  .gedge.epend{stroke:var(--amber)!important;stroke-opacity:.85!important;stroke-dasharray:3 3!important}
+  /* what an edit says, at the foot of the map */
+  .gtoast{
+    position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:7;
+    display:flex;gap:12px;align-items:center;max-width:min(560px,calc(100% - 32px));
+    padding:8px 12px;background:var(--panel);border:1px solid var(--amber-line);
+    font-size:10.5px;letter-spacing:.04em;line-height:1.5;color:var(--ink-2);
+  }
+  .gtoast[hidden]{display:none}
+  .gtoast.bad{border-color:var(--alert);color:var(--alert)}
+  .gtoast b{color:var(--bone);font-weight:500}
+  .gtoast .act{padding:4px 9px;flex:none}
+  /* the inspector's delete section, and its checklist */
+  .ginsp .ied{margin-top:16px;padding-top:12px;border-top:1px dashed var(--rule)}
+  .ginsp .ied .iacts{margin-top:9px}
+  .ginsp .iedk{font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:var(--alert)}
+  .act.warn{border-color:rgba(255,59,48,.32)}
+  .act.warn:hover{border-color:var(--alert);color:var(--alert)}
+  .act.danger{border-color:var(--alert);color:var(--alert)}
+  .act.danger:hover:not(:disabled){background:var(--alert);color:var(--void)}
+  .ginsp .iednote{font-size:10.5px;color:var(--dim);margin:8px 0 0;letter-spacing:.04em;line-height:1.5}
+  .ginsp .iednote.bad{color:var(--alert)}
+  .ginsp .edall{margin-top:9px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2)}
+  .ginsp .edall button{background:none;border:0;border-bottom:1px solid var(--rule);padding:0;cursor:pointer;
+    font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink-2)}
+  .ginsp .edall button:hover{color:var(--alert);border-color:var(--alert)}
+  .ginsp .edlist{margin-top:6px;max-height:260px;overflow-y:auto;border:1px solid var(--rule);background:var(--panel)}
+  .ginsp .edrow{
+    display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:0 8px;align-items:baseline;
+    padding:5px 8px;border-bottom:1px solid var(--rule);font-size:10.5px;color:var(--ink);cursor:pointer;
+  }
+  .ginsp .edrow:last-child{border-bottom:0}
+  .ginsp .edrow:hover{background:var(--alert-film)}
+  .ginsp .edrow.off{color:var(--dim)}
+  .ginsp .edrow input{accent-color:var(--alert);margin:0;align-self:center;cursor:pointer}
+  .ginsp .edkind{font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--node)}
+  .ginsp .edname{overflow-wrap:anywhere}
+  .ginsp .edwhy{font-size:9px;letter-spacing:.06em;color:var(--amber);white-space:nowrap}
+
   /* ---------- a big map, kept light ----------
      Level of detail: a record's name from 80% zoom, its second line from
      120% — unless it is held, hovered, picked or next to the held one; the
