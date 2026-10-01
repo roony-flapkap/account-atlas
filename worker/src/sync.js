@@ -72,7 +72,7 @@ export async function tick(env, { now = Date.now(), nightly = false } = {}){
   const report = { did: [] };
   try {
     const hs = hubspotClient(env);
-    const budget = Number(env.SYNC_WRITE_BUDGET) || 80000;
+    const budget = Number(env.SYNC_WRITE_BUDGET) || 60000;
     if (nightly){ await startNightly(env); report.did.push("nightly queued"); }
 
     // the 15-minute read goes first: it is what keeps the copy current
@@ -80,8 +80,12 @@ export async function tick(env, { now = Date.now(), nightly = false } = {}){
     const lastPoll = poll.heartbeat ? Date.parse(poll.heartbeat) : 0;
     if (now - lastPoll >= POLL_EVERY_MS){ report.did.push(await pollChanges(env, hs, poll)); }
 
+    // the webhooks' writes count too: they land on the same 100,000 a day
     const used = await usageToday(env);
-    if (used.sync_writes >= budget){ report.did.push("write budget spent for today (" + used.sync_writes + ")"); return report; }
+    if (used.sync_writes + used.hook_writes >= budget){
+      report.did.push("write budget spent for today (" + used.sync_writes + " by the sync, " + used.hook_writes + " by webhooks)");
+      return report;
+    }
 
     for (const name of PAIR_JOBS.concat(ORDER, NIGHTLY)){
       const j = await job(env, name);
@@ -253,7 +257,7 @@ export async function syncStatus(env){
   return {
     jobs,
     copy: { companies: filled(T.company), contacts: filled(T.contact), deals: filled(T.deal), leads: filled(T.lead) },
-    today: Object.assign(await usageToday(env), { writeBudget: Number(env.SYNC_WRITE_BUDGET) || 80000, sqlReadBudget: Number(env.SQL_READ_BUDGET) || 1000000 }),
+    today: Object.assign(await usageToday(env), { writeBudget: Number(env.SYNC_WRITE_BUDGET) || 60000, sqlReadBudget: Number(env.SQL_READ_BUDGET) || 1000000 }),
     hubspot: gate
   };
 }

@@ -1,6 +1,7 @@
 // FINDINGS: named, read-only questions over the copy, each answered as rows
 // of { keys (the records involved), label (what), detail (why), score }.
-// An answer is kept for an hour (one row in lookups), so opening the panel
+// An answer is kept for an hour (a day for the three that scan whole tables;
+// one row in lookups), so opening the panel
 // does not spend the day's reads; "fresh" asks again. A finding that needs a
 // part of the copy still being filled says so, and answers with what is there.
 
@@ -8,6 +9,9 @@ import { addUsage, usageToday, pairsPaused } from "./sync.js";
 import { SqlError } from "./sql.js";
 
 const TTL_MS = 60 * 60000;
+// the heavy three read 240,000–480,000 rows a run on the full copy: their answer
+// is kept a day, and Refresh asks again at most once an hour
+const HEAVY_TTL_MS = 24 * 60 * 60000, HEAVY_REFRESH_MS = 60 * 60000;
 const MAX_ROWS = 500;
 
 // The duplicate pairs are costly to work out (~800,000 rows read: D1 counts
@@ -54,18 +58,18 @@ export const FINDINGS = [
          "(CASE WHEN p.same_owner THEN 'same owner' ELSE '' END), ' ·') AS detail, p.score AS score " +
          "FROM dup_contact_pairs p JOIN records r1 ON r1.key = p.a AND r1.deleted_at IS NULL JOIN records r2 ON r2.key = p.b AND r2.deleted_at IS NULL " +
          "ORDER BY p.score DESC, p.a LIMIT " + MAX_ROWS },
-  { id: "shared-numbers", group: "Hidden links", title: "One number, many companies",
+  { id: "shared-numbers", group: "Hidden links", title: "One number, many companies", heavy: true,
     blurb: "A phone number on three or more companies, or five or more records: an agent, an accountant, a typing office — or one owner behind several businesses.",
     needs: ["backfill:0-2", "backfill:0-1"],
     sql: "SELECT keys, 'Number ending ' || tail AS label, companies || ' companies · ' || contacts || ' contacts' AS detail, records AS score " +
          "FROM shared_numbers WHERE NOT junk AND (companies >= 3 OR records >= 5) ORDER BY records DESC LIMIT " + MAX_ROWS },
-  { id: "connectors", group: "Hidden links", title: "People on 3+ companies",
+  { id: "connectors", group: "Hidden links", title: "People on 3+ companies", heavy: true,
     blurb: "One person on three or more companies: a group, a consultant, a shared finance mailbox — or contacts put on the wrong account.",
     needs: PEOPLE_AND_COMPANIES,
     sql: "SELECT l.a || ' ' || group_concat(l.b, ' ') AS keys, coalesce(r.label, 'Contact ' || substr(l.a, 5)) AS label, count(*) || ' companies' AS detail, count(*) AS score " +
          "FROM links l LEFT JOIN records r ON r.key = l.a WHERE " + range("l.a", CONTACT) + " AND " + range("l.b", COMPANY) + " " +
          "GROUP BY l.a HAVING count(*) >= 3 ORDER BY score DESC LIMIT " + MAX_ROWS },
-  { id: "unattached", group: "Hidden links", title: "Unattached, same number",
+  { id: "unattached", group: "Hidden links", title: "Unattached, same number", heavy: true,
     blurb: "A contact carrying a company's phone number with no link to it: activity logged against one is invisible from the other.",
     needs: PEOPLE_AND_COMPANIES,
     sql: "SELECT p.key || ' ' || q.key AS keys, coalesce(co.label, 'Company') || '  ·  ' || coalesce(ct.label, 'Contact ' || substr(q.key, 5)) AS label, " +
@@ -145,7 +149,11 @@ export async function runFinding(env, user, id, { fresh = false } = {}){
   const waiting = waitingFor(f, jobs);
   const c0 = await cached(env, id);
   const age = c0 ? Date.now() - Date.parse(c0.at) : Infinity;
-  if (!fresh && age < TTL_MS) return Object.assign(c0, { id, waiting, cached: true });
+  if (!fresh && age < (f.heavy ? HEAVY_TTL_MS : TTL_MS)) return Object.assign(c0, { id, waiting, cached: true });
+  if (fresh && f.heavy && age < HEAVY_REFRESH_MS){
+    const next = new Date(Date.parse(c0.at) + HEAVY_REFRESH_MS).toISOString().slice(11, 16);
+    return Object.assign(c0, { id, waiting, cached: true, note: "worked out " + Math.max(1, Math.round(age / 60000)) + " min ago; it can be asked again from " + next + " UTC" });
+  }
   // the duplicate lists come from the nightly tables: until the first night, there is nothing to read
   let pairsAt = null;
   if (f.pairs){

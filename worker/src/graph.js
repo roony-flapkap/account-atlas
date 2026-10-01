@@ -130,8 +130,10 @@ export async function applyLinks(env, sets, { source, emit = true, track = sourc
     }
     return out;
   }
+  // which lists the copy already holds whole: a kind whose fill is done ("*a>b"),
+  // or one record's list marked in link_sync ("key|type")
   const complete = new Set();
-  if (emit){
+  if (emit || track){
     const types = [...new Set(sets.map(s => s.from.split("/")[0] + ">" + s.toType))];
     const jobs = types.flatMap(p => { const [a, b] = p.split(">"); return ["links:" + a + ">" + b, "links:" + b + ">" + a]; });
     const [js, ls] = await env.GRAPH.batch([
@@ -143,7 +145,8 @@ export async function applyLinks(env, sets, { source, emit = true, track = sourc
     for (const p of types){ const [a, b] = p.split(">"); if (done.has("links:" + a + ">" + b) || done.has("links:" + b + ">" + a)) complete.add("*" + p); }
     for (const r of ls.results || []) complete.add(r.key + "|" + r.t);
   }
-  const emitFor = s => emit && (complete.has(s.from + "|" + s.toType) || complete.has("*" + s.from.split("/")[0] + ">" + s.toType));
+  const whole = s => complete.has(s.from + "|" + s.toType) || complete.has("*" + s.from.split("/")[0] + ">" + s.toType);
+  const emitFor = s => emit && whole(s);
   const probe = sets.map(s => [s.from].concat(typeRange(s.toType)));
   const have = new Map();                         // "from|toType" -> Set(to)
   const slot = (from, t) => { const k = from + "|" + t; if (!have.has(k)) have.set(k, new Set()); return have.get(k); };
@@ -180,10 +183,14 @@ export async function applyLinks(env, sets, { source, emit = true, track = sourc
     "ON CONFLICT(a, b) DO UPDATE SET type_id = excluded.type_id, label = excluded.label, synced_at = excluded.synced_at").bind(J(part), at)));
   await inChunks(del, 800, part => stmts.push(env.GRAPH.prepare(
     "DELETE FROM links WHERE (a, b) IN (SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]') FROM json_each(?1))").bind(J(part))));
-  // from now on these lists are known whole, so a later difference is a change
-  if (track) await inChunks(sets.map(s => [s.from, s.toType]), 800, part => stmts.push(env.GRAPH.prepare(
+  // from now on these lists are known whole, so a later difference is a change.
+  // Only the row's existence is ever read, so it is written once; and not at
+  // all where the fill of that kind is done, whose job state already says it
+  // for every record (walks rewrote ~8,600 of these one morning for nothing)
+  const mark = track ? sets.filter(s => !whole(s)).map(s => [s.from, s.toType]) : [];
+  await inChunks(mark, 800, part => stmts.push(env.GRAPH.prepare(
     "INSERT INTO link_sync (key, to_type, at) SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), ?2 FROM json_each(?1) WHERE true " +
-    "ON CONFLICT(key, to_type) DO UPDATE SET at = excluded.at").bind(J(part), at)));
+    "ON CONFLICT(key, to_type) DO NOTHING").bind(J(part), at)));
   if (stmts.length) out.writes = written(await env.GRAPH.batch(stmts));
   return out;
 }

@@ -13,6 +13,7 @@ import { hubspotClient, T } from "./hubspot.js";
 import { ASKFOR, toRow, recKey } from "./shape.js";
 import { applyRecords, applyOneLink, applyDeletions, recordChanges } from "./graph.js";
 import { announce } from "./hub.js";
+import { addUsage } from "./sync.js";
 
 const enc = new TextEncoder();
 const TYPE_OF = { contact: T.contact, company: T.company, deal: T.deal, lead: T.lead, line_item: null, ticket: null };
@@ -83,6 +84,11 @@ export async function applyEvents(env, events, { at = new Date().toISOString() }
   const reread = new Map();      // type -> Set(id)
   const want = (t, id) => { if (!reread.has(t)) reread.set(t, new Set()); reread.get(t).add(id); };
   const deleted = [], changes = [];
+  // what this delivery costs the day's 100,000 rows written, counted so the
+  // fill's daily cap leaves room for it (a deletion is about 3: the tombstone,
+  // its links and its phone endings)
+  let writes = 0;
+  const DELETE_WRITES = 3;
   const merges = [], createdKeys = new Set();
   // oldest first, so a create-then-delete in one delivery ends deleted
   fresh.sort((a, b) => (a.occurredAt || 0) - (b.occurredAt || 0));
@@ -104,7 +110,7 @@ export async function applyEvents(env, events, { at = new Date().toISOString() }
       const a = recKey(ft, String(e.fromObjectId)), b = recKey(toT, String(e.toObjectId));
       // HubSpot sends both sides of every link change; the second is a no-op
       const did = await applyOneLink(env, a, b, !!e.associationRemoved, { typeId: e.associationTypeId ?? null, at: when });
-      if (did) changes.push({ kind: e.associationRemoved ? "unlinked" : "linked", key: a, other: b, at: when });
+      if (did){ changes.push({ kind: e.associationRemoved ? "unlinked" : "linked", key: a, other: b, at: when }); writes += 2; }
       continue;
     }
     // creation, restore, propertyChange: read the record as it is now
@@ -112,7 +118,7 @@ export async function applyEvents(env, events, { at = new Date().toISOString() }
     want(t, id);
   }
 
-  for (const m of merges){ changes.push(...await applyDeletions(env, m.losers, { at: m.at, mergedInto: m.winner })); }
+  for (const m of merges){ changes.push(...await applyDeletions(env, m.losers, { at: m.at, mergedInto: m.winner })); writes += m.losers.length * DELETE_WRITES; }
   const gone = new Set(deleted.map(d => d.key));
   if (reread.size){
     const hs = hubspotClient(env);
@@ -121,6 +127,7 @@ export async function applyEvents(env, events, { at = new Date().toISOString() }
       if (!list.length || !ASKFOR[t]) continue;
       const rows = (await hs.batchRead(t, list, ASKFOR[t])).map(x => toRow(t, x));
       const res = await applyRecords(env, rows, { source: "webhook", at });
+      writes += res.writes || 0;
       changes.push(...res.created.filter(k => createdKeys.has(k)).map(k => ({ kind: "created", key: k })), ...res.changes);
     }
   }
@@ -134,6 +141,7 @@ export async function applyEvents(env, events, { at = new Date().toISOString() }
       if (told.has(d.key)) continue;
       told.add(d.key);
       changes.push(...await applyDeletions(env, [d.key], { at: d.at }));
+      writes += DELETE_WRITES;
     }
   }
 
@@ -143,6 +151,8 @@ export async function applyEvents(env, events, { at = new Date().toISOString() }
     await env.APP.prepare("INSERT OR IGNORE INTO hook_events (id, at) SELECT value, ?2 FROM json_each(?1)")
       .bind(JSON.stringify(fresh.slice(i, i + 400).map(e => String(e.eventId))), at).run();
   }
+  writes += changes.length + fresh.length;          // the change rows, and each event remembered once
+  await addUsage(env, "hook_writes", writes);
   await announce(env, last, changes);
   return { applied: fresh.length, changes: changes.length, last };
 }
@@ -161,8 +171,16 @@ export async function handleHook(req, env, ctx){
   let events;
   try { events = JSON.parse(body); } catch(e){ return new Response("not JSON", { status: 400 }); }
   if (!Array.isArray(events)) events = [events];
-  // only this portal's events
-  events = events.filter(e => !env.PORTAL_ID || String(e.portalId) === String(env.PORTAL_ID));
+  // only this portal's events. Both sides trimmed: a stray newline in the
+  // secret once dropped every event while still answering 204, so a drop is
+  // also said out loud in the Worker's log
+  const portal = String(env.PORTAL_ID || "").trim();
+  const mine = events.filter(e => !portal || String(e.portalId).trim() === portal);
+  if (mine.length < events.length){
+    const others = [...new Set(events.filter(e => !mine.includes(e)).map(e => String(e.portalId)))];
+    console.warn("webhook: dropped " + (events.length - mine.length) + " of " + events.length + " event(s) from portal(s) " + others.join(", "));
+  }
+  events = mine;
   // Applied before answering: a failure answers 500 and HubSpot sends the
   // events again (up to 10 times over a day). Answering first and applying
   // in the background would lose them for good on a failure.
