@@ -84,6 +84,20 @@
   html[data-phase="gate"],html[data-phase="run"],
   html[data-phase="gate"] body,html[data-phase="run"] body{overflow:hidden;height:100%}
 
+  /* ---------- scrollers, in the console's own look ----------
+     A hairline rail and a squared teal bar, no arrows. Chromium and Safari
+     take the ::-webkit-scrollbar rules; Firefox gets only the colours,
+     because setting scrollbar-color in Chromium 121+ would switch these off. */
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-track{background:linear-gradient(90deg,transparent 4px,var(--rule) 4px,var(--rule) 5px,transparent 5px)}
+  ::-webkit-scrollbar-track:horizontal{background:linear-gradient(180deg,transparent 4px,var(--rule) 4px,var(--rule) 5px,transparent 5px)}
+  ::-webkit-scrollbar-thumb{background-color:var(--accent-dim);border:2px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background-color:var(--accent)}
+  ::-webkit-scrollbar-thumb:active{background-color:var(--bone)}
+  ::-webkit-scrollbar-button{display:none;width:0;height:0}
+  ::-webkit-scrollbar-corner{background:transparent}
+  @supports not selector(::-webkit-scrollbar){ html,*{scrollbar-width:thin;scrollbar-color:var(--accent-dim) transparent} }
+
   /* ---------- corner-bracketed frames ----------
      Inset to 0 and never wider than the frame — on a frame that scrolls,
      anything hanging past the edge counts as content and raises a
@@ -891,7 +905,11 @@
   /* this canvas's findings */
   .cvfrun{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0 4px}
   .cvfmeta{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim-2)}
-  .fdaway{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--amber);border:1px solid var(--amber);padding:0 4px;margin-left:6px;vertical-align:1px}
+  .fdtags{display:flex;align-items:flex-start;gap:5px;justify-self:end}
+  .fdaway{font-size:8px;line-height:14px;letter-spacing:.18em;text-transform:uppercase;color:var(--amber);border:1px solid var(--amber);padding:0 4px;white-space:nowrap}
+  .fdtags .fds{line-height:14px}
+  /* the panel's intro stays put; what scrolls under it starts below a rule */
+  .gsidelede + .gsidelist{border-top:1px solid var(--rule);margin-top:6px}
   .fdgroup{font-size:8.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--dim-2);margin:14px 0 5px}
   .fd{border:1px solid var(--rule);background:var(--panel);margin-top:-1px}
   .fd.open{border-color:var(--red-dim);background:var(--accent-film);position:relative;z-index:1}
@@ -904,7 +922,7 @@
   .fdb{padding:0 10px 10px}
   .fdl{font-size:10px;line-height:1.5;color:var(--dim);margin:0 0 6px}
   .fdw{font-size:9.5px;line-height:1.5;color:var(--amber);margin:0 0 6px}
-  .fdrows{max-height:340px;overflow:auto;border-top:1px solid var(--rule)}
+  .fdrows{max-height:340px;overflow:auto;border-top:1px solid var(--rule);padding-right:6px}
   .fdr{padding:6px 0;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px}
   .fdgo{font-family:var(--mono);font-size:10.5px;text-align:left;background:none;border:0;padding:0;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
   .fdgo:hover{color:var(--red)}

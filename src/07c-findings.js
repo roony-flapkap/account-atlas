@@ -156,9 +156,11 @@
     const n = CFD.shown[f.id] || 25;
     return f.rows.slice(0, n).map(row => {
       const away = row.keys.filter(k => !MAP.byKey[k]).length;
+      // the tag and the score share the row's right-hand column, side by side
+      const tags = (away ? '<span class="fdaway" title="' + away + " " + plural(away, "record") + ' not on this canvas">elsewhere</span>' : "") +
+                   (row.score > 1 ? '<span class="fds" title="score">' + esc(String(row.score)) + "</span>" : "");
       return '<div class="fdr"><button type="button" class="fdgo" data-fdgo="' + esc(cvRowKey(row)) + '">' + esc(row.label) + "</button>" +
-        (away ? '<span class="fdaway" title="' + away + " " + plural(away, "record") + ' not on this canvas">elsewhere</span>' : "") +
-        (row.score > 1 ? '<span class="fds" title="score">' + esc(String(row.score)) + "</span>" : "") +
+        (tags ? '<span class="fdtags">' + tags + "</span>" : "") +
         (row.detail ? '<div class="fdd">' + esc(row.detail) + "</div>" : "") + "</div>";
     }).join("") +
       (f.rows.length > n ? '<button type="button" class="act fdmore" data-cvmore="' + esc(f.id) + '">Show ' + fmt(Math.min(f.rows.length - n, 100)) + " more · " + fmt(f.rows.length) + (f.more ? "+" : "") + " in all</button>" : "");
