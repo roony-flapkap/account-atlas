@@ -168,9 +168,15 @@
     const { hives, loose, fields } = hiveModel();
     // the spiral is stretched to the frame's shape — wide on a desk, tall on a phone
     const asp = clamp(aspect || 1.6, 0.55, 2.2), ax = Math.sqrt(asp), ay = 1 / ax;
+    const isHive = new Set(hives.map(h => h.key));
     hives.forEach(h => {
       const m = h.members.length;
-      h.ringR = Math.max(G.ringMin, m * G.arc / (2 * Math.PI));
+      // Records facing one partner are seated side by side on the side
+      // facing it; a crowd too big for that side would send the lines of
+      // its far end back across its own hive, so its ring grows to fit.
+      const crowd = new Map();
+      ringFar(h, isHive).forEach(far => far.forEach(k => crowd.set(k, (crowd.get(k) || 0) + 1)));
+      h.ringR = Math.max(G.ringMin, m * G.arc / (2 * Math.PI), Math.max(0, ...crowd.values()) * G.arc / (2 * G.face));
       const lab = m ? 16 + Math.max(...h.members.map(n => labelLen(n, G.ringChars))) * G.charW : 30;
       h.labR = h.ringR + lab;
       if (h.sats.length){
@@ -191,10 +197,9 @@
       c.room = 2 * h.outerR + G.hiveGap * 0.8;     // how wide its name may run
       // each ring starts facing away from the middle of the map
       const a0 = i === 0 ? -Math.PI / 2 : Math.atan2(h.y, h.x);
-      const step = (Math.PI * 2) / Math.max(1, h.members.length);
-      const slots = ringSlots(h, hiveAt, a0, step);
+      const angles = ringAngles(h, hiveAt, a0);
       h.members.forEach((n, j) => {
-        const a = a0 + slots[j] * step;
+        const a = angles[j];
         n.x = h.x + h.ringR * Math.cos(a); n.y = h.y + h.ringR * Math.sin(a);
         n.hive = h.key; n.level = 1;
         // what it was opened out of wins, so an arrival hangs from its fetcher
@@ -322,62 +327,127 @@
     });
   }
 
-  // Which slot on its ring each member takes. A record that is also on
-  // another account takes the free slot nearest the direction of that
-  // account's hive, and a contact's own deals and leads follow it there; the
-  // rest keep their order in the slots left. With no such records the ring is
-  // exactly as before: slot j for member j.
-  function ringSlots(h, hiveAt, a0, step){
-    const m = h.members.length, plain = h.members.map((_, j) => j);
-    if (m < 2) return plain;
-    const want = new Map();                          // member index -> the angle it should face
+  // The other accounts each member of a ring is also on (hive keys), by
+  // member index; a contact's own deals and leads that are on none take the
+  // contact's, so they sit beside it. Members on no other account are absent.
+  function ringFar(h, isHive){
+    const far = new Map();
     h.members.forEach((n, j) => {
-      const far = n.adj.filter(k => k !== h.key && hiveAt.has(k)).map(k => hiveAt.get(k));
-      if (!far.length) return;
-      const dx = far.reduce((s, p) => s + p.x, 0) / far.length - h.x, dy = far.reduce((s, p) => s + p.y, 0) / far.length - h.y;
-      if (Math.hypot(dx, dy) > 1) want.set(j, Math.atan2(dy, dx));
+      const ks = n.adj.filter(k => k !== h.key && isHive.has(k));
+      if (ks.length) far.set(j, ks);
     });
-    if (!want.size) return plain;
     let head = -1;
     h.members.forEach((n, j) => {
       if (n.kind === "contact" || n.kind === "detached") head = j;
-      else if (head >= 0 && want.has(head) && !want.has(j) && n.adj.includes(h.members[head].key)) want.set(j, want.get(head));
+      else if (head >= 0 && far.has(head) && !far.has(j) && n.adj.includes(h.members[head].key)) far.set(j, far.get(head));
     });
-    const taken = new Array(m).fill(false), out = new Array(m);
-    const slotOf = ang => { const s = Math.round((ang - a0) / step); return ((s % m) + m) % m; };
-    [...want.entries()].sort((p, q) => p[1] - q[1] || p[0] - q[0]).forEach(([j, ang]) => {
-      const s0 = slotOf(ang);
-      for (let d = 0; d < m; d++){
-        const a = (s0 + d) % m, b = (s0 - d + m) % m;
-        if (!taken[a]){ taken[a] = true; out[j] = a; return; }
-        if (!taken[b]){ taken[b] = true; out[j] = b; return; }
+    return far;
+  }
+
+  // The angle each member sits at on its ring. A record also on other
+  // accounts wants the direction of their hives. Those records are seated in
+  // runs centred on what they want, one ring spacing apart: records wanting
+  // the same way sit side by side on that side, never pushed round to the
+  // far side of a small ring, which sent their lines back across their own
+  // hive. (Runs are pooled where they would overlap, each placed where its
+  // members want it on average.) The rest keep their order, spread over the
+  // arcs left. With no such records the ring is exactly as before: member j
+  // at slot j.
+  function ringAngles(h, hiveAt, a0){
+    const m = h.members.length, TAU = 2 * Math.PI, step = TAU / Math.max(1, m);
+    const out = h.members.map((_, j) => a0 + j * step);
+    const items = [];
+    ringFar(h, hiveAt).forEach((ks, j) => {
+      const dx = ks.reduce((s, k) => s + hiveAt.get(k).x, 0) / ks.length - h.x;
+      const dy = ks.reduce((s, k) => s + hiveAt.get(k).y, 0) / ks.length - h.y;
+      if (Math.hypot(dx, dy) > 1) items.push({ j, w: (Math.atan2(dy, dx) + TAU) % TAU });
+    });
+    if (!items.length) return out;
+    const gap = Math.min(step, G.arc / h.ringR);
+    items.sort((p, q) => p.w - q.w || p.j - q.j);
+    // open the circle out at the widest gap between wanted directions
+    let cut = 0, widest = -1;
+    items.forEach((it, i) => {
+      const next = i + 1 < items.length ? items[i + 1].w : items[0].w + TAU;
+      if (next - it.w > widest){ widest = next - it.w; cut = i + 1; }
+    });
+    const line = items.slice(cut).concat(items.slice(0, cut).map(it => ({ j: it.j, w: it.w + TAU })));
+    const runs = [];
+    line.forEach(it => {
+      runs.push({ items: [it], s: it.w });
+      while (runs.length > 1){
+        const b = runs[runs.length - 1], a = runs[runs.length - 2];
+        if (a.s + a.items.length * gap <= b.s + 1e-9) break;
+        const all = a.items.concat(b.items);
+        runs.splice(-2, 2, { items: all, s: all.reduce((s, x, k) => s + x.w - k * gap, 0) / all.length });
       }
     });
-    let s = 0;
-    h.members.forEach((n, j) => {
-      if (out[j] !== undefined) return;
-      while (taken[s]) s++;
-      taken[s] = true; out[j] = s;
+    const seated = new Set(), occupied = [];
+    runs.forEach(r => {
+      r.items.forEach((it, k) => { out[it.j] = r.s + k * gap; seated.add(it.j); });
+      occupied.push([r.s - gap / 2, r.s + (r.items.length - 0.5) * gap]);
     });
+    const rest = h.members.map((_, j) => j).filter(j => !seated.has(j));
+    if (!rest.length) return out;
+    // the free arcs between the runs share the rest in proportion to their length
+    const free = [];
+    occupied.forEach((o, i) => {
+      const next = i + 1 < occupied.length ? occupied[i + 1][0] : occupied[0][0] + TAU;
+      if (next - o[1] > 1e-9) free.push([o[1], next]);
+    });
+    if (!free.length) return out;
+    const total = free.reduce((s, f) => s + f[1] - f[0], 0);
+    const quota = free.map(f => (f[1] - f[0]) / total * rest.length), give = quota.map(Math.floor);
+    let left = rest.length - give.reduce((s, x) => s + x, 0);
+    quota.map((q, i) => [q - give[i], i]).sort((p, q) => q[0] - p[0] || p[1] - q[1]).forEach(([, i]) => { if (left > 0){ give[i]++; left--; } });
+    let r = 0;
+    free.forEach((f, i) => { for (let k = 0; k < give[i]; k++) out[rest[r++]] = f[0] + (k + 0.5) * (f[1] - f[0]) / give[i]; });
     return out;
   }
 
-  // THE TIDY ("Lay it out again" on the hives): every hive a circle that may
-  // not overlap another, the records two hives share pulling them together
-  // like a spring, settled over a few hundred small steps (Verlet steps with
-  // damping, a broad-phase grid for the collisions), cooling as it goes. The
-  // hives that share nothing are laid in the band again, under where the
-  // rest settled. Nothing random: the same canvas always tidies the same.
+  // THE TIDY ("Lay it out again" on the hives). Hives joined, directly or
+  // not, by records they share form separate GROUPS, and each group is
+  // settled on its own: every hive a circle that may not overlap another,
+  // the shared records pulling partners together like springs, over a few
+  // hundred damped Verlet steps (a broad-phase grid for the collisions),
+  // then untangled by swapping same-sized hives wherever that shortens the
+  // group's lines. The settled groups are packed side by side like islands,
+  // biggest first, so lines never run between groups that share nothing;
+  // the hives that share nothing at all go in the band under them.
+  // Nothing random: the same canvas always tidies the same.
   // Returns every hive's centre, to be kept as pins.
   function relaxHives(hives, links, aspect){
-    const asp = clamp(aspect || 1.6, 0.55, 2.2), GAP = G.hiveGap;
+    const asp = clamp(aspect || 1.6, 0.55, 2.2), ax = Math.sqrt(asp), ay = 1 / ax;
     const shares = h => links.has(h.key) && links.get(h.key).size > 0;
-    const group = hives.filter(shares), band = hives.filter(h => !shares(h));
-    if (group.length >= 2){
-      const P = group.map(h => ({ h, x: h.x, y: h.y, px: h.x, py: h.y, r: h.outerR }));
-      const idx = new Map(P.map((p, i) => [p.h.key, i])), springs = [];
-      group.forEach((h, i) => links.get(h.key).forEach((w, k) => { const j = idx.get(k); if (j !== undefined && j > i) springs.push([i, j, w]); }));
-      const STEPS = 320, DAMP = 0.85;
+    const linked = hives.filter(shares), band = hives.filter(h => !shares(h));
+    const rank = new Map(hives.map((h, i) => [h.key, i]));
+    const up = new Map(linked.map(h => [h.key, h.key]));
+    const find = k => { while (up.get(k) !== k){ up.set(k, up.get(up.get(k))); k = up.get(k); } return k; };
+    linked.forEach(h => links.get(h.key).forEach((w, k) => { if (up.has(k)){ const a = find(h.key), b = find(k); if (a !== b) up.set(a, b); } }));
+    const groups = new Map();
+    linked.forEach(h => { const r = find(h.key); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(h); });
+    const units = [...groups.values()].map(g => settleGroup(g, links, asp))
+      .sort((a, b) => b.R - a.R || rank.get(a.hives[0].key) - rank.get(b.hives[0].key));
+    packUnits(units, ax, ay);
+    if (band.length) placeBand(band, linked.length ? hiveBounds(linked) : { x0: 0, y0: 0, x1: 0, y1: -G.hiveGap * 2 }, asp);
+    const pins = {};
+    hives.forEach(h => { pins[h.key] = { x: +h.x.toFixed(1), y: +h.y.toFixed(1) }; });
+    return pins;
+  }
+  // One group settled around its own centre: returns its hives (centred on
+  // 0,0), the radius of the circle that holds them all, and the pairs of
+  // its hives that share records (the lines between them).
+  function settleGroup(g, links, asp){
+    const GAP = G.hiveGap;
+    const cx0 = g.reduce((s, h) => s + h.x, 0) / g.length, cy0 = g.reduce((s, h) => s + h.y, 0) / g.length;
+    const P = g.map(h => ({ h, x: h.x - cx0, y: h.y - cy0, px: h.x - cx0, py: h.y - cy0, r: h.outerR }));
+    const idx = new Map(P.map((p, i) => [p.h.key, i])), springs = [];
+    g.forEach((h, i) => links.get(h.key).forEach((w, k) => { const j = idx.get(k); if (j !== undefined && j > i) springs.push([i, j, w]); }));
+    if (P.length === 2){
+      // two partners simply sit side by side, touching
+      P[0].x = -(P[1].r + GAP / 2); P[0].y = 0; P[1].x = P[0].r + GAP / 2; P[1].y = 0;
+    } else {
+      const STEPS = Math.min(600, 200 + 20 * P.length), DAMP = 0.85;
       for (let s = 0; s < STEPS; s++){
         const t = 1 - s / STEPS;
         P.forEach(p => { const vx = (p.x - p.px) * DAMP, vy = (p.y - p.py) * DAMP; p.px = p.x; p.py = p.y; p.x += vx; p.y += vy; });
@@ -387,18 +457,99 @@
           const f = Math.min(0.25, 0.04 * (1 + Math.log(w))) * (d - rest) * t / 2;
           a.x += dx / d * f; a.y += dy / d * f; b.x -= dx / d * f; b.y -= dy / d * f;
         });
-        // a gentle pull to the middle keeps separate groups from drifting apart, wider than tall like the frame
+        // a gentle pull to the group's middle, a little wider than tall like the frame
         const cx = P.reduce((q, p) => q + p.x, 0) / P.length, cy = P.reduce((q, p) => q + p.y, 0) / P.length;
-        P.forEach(p => { p.x += (cx - p.x) * 0.004 * t / asp; p.y += (cy - p.y) * 0.004 * t * asp; });
+        P.forEach(p => { p.x += (cx - p.x) * 0.01 * t / asp; p.y += (cy - p.y) * 0.01 * t * asp; });
         collide(P, GAP);
       }
+      untangle(P, springs);
       for (let s = 0; s < 12; s++) collide(P, GAP);        // settled: nothing left overlapping
-      P.forEach(p => { p.h.x = p.x; p.h.y = p.y; });
     }
-    if (band.length) placeBand(band, group.length ? hiveBounds(group) : { x0: 0, y0: 0, x1: 0, y1: -G.hiveGap * 2 }, asp);
-    const pins = {};
-    hives.forEach(h => { pins[h.key] = { x: +h.x.toFixed(1), y: +h.y.toFixed(1) }; });
-    return pins;
+    const cx = P.reduce((q, p) => q + p.x, 0) / P.length, cy = P.reduce((q, p) => q + p.y, 0) / P.length;
+    let R = 0;
+    P.forEach(p => { p.x -= cx; p.y -= cy; p.h.x = p.x; p.h.y = p.y; R = Math.max(R, Math.hypot(p.x, p.y) + p.r); });
+    return { hives: g, R, lines: springs.map(([i, j]) => [g[i], g[j]]) };
+  }
+  // Swap two hives of about the same size wherever that shortens the lines
+  // between the group's partners (weighted by how much they share): a few
+  // passes, which is where most crossings inside a group come undone.
+  function untangle(P, springs){
+    if (P.length < 3 || P.length > 80) return;
+    const nb = P.map(() => []);
+    springs.forEach(([i, j, w]) => { nb[i].push([j, w]); nb[j].push([i, w]); });
+    const cost = (i, x, y, skip) => nb[i].reduce((s, [j, w]) => j === skip ? s : s + w * Math.hypot(x - P[j].x, y - P[j].y), 0);
+    for (let pass = 0; pass < 4; pass++){
+      let swapped = false;
+      for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++){
+        const a = P[i], b = P[j];
+        if (Math.abs(a.r - b.r) > 0.25 * Math.max(a.r, b.r)) continue;
+        const now = cost(i, a.x, a.y, j) + cost(j, b.x, b.y, i), then = cost(i, b.x, b.y, j) + cost(j, a.x, a.y, i);
+        if (then < now - 1){ [a.x, b.x] = [b.x, a.x]; [a.y, b.y] = [b.y, a.y]; swapped = true; }
+      }
+      if (!swapped) break;
+    }
+  }
+  // The settled groups placed biggest first on an outward golden-angle
+  // spiral, each at the first point where none of its hives touches a hive
+  // already placed or sits on another group's lines, and none of its own
+  // lines runs over another group's hive. Checked hive by hive, through a
+  // grid of cells: packed as one circle round each group, a pair of hives
+  // wasted half its circle and the map came out twice the size.
+  function packUnits(units, ax, ay){
+    const CELL = 320, GAP = G.hiveGap, grid = new Map(), floors = [];
+    const cells = (x0, y0, x1, y1, fn) => {
+      for (let i = Math.floor(x0 / CELL); i <= Math.floor(x1 / CELL); i++)
+        for (let j = Math.floor(y0 / CELL); j <= Math.floor(y1 / CELL); j++) if (fn(i + "," + j) === false) return false;
+      return true;
+    };
+    const near = (px, py, a, b) => {                 // from a point to the segment ab
+      const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy;
+      const t = L ? clamp(((px - a.x) * dx + (py - a.y) * dy) / L, 0, 1) : 0;
+      return Math.hypot(px - a.x - t * dx, py - a.y - t * dy);
+    };
+    const clear = (u, ox, oy) => {
+      for (const h of u.hives){
+        const x = h.x + ox, y = h.y + oy, pad = h.outerR + GAP / 2;
+        if (!cells(x - pad, y - pad, x + pad, y + pad, k => {
+          const c = grid.get(k);
+          if (!c) return;
+          for (const p of c.hives) if (Math.hypot(p.x - x, p.y - y) < p.outerR + h.outerR + GAP) return false;
+          for (const [a, b] of c.lines) if (near(x, y, a, b) < pad) return false;
+        })) return false;
+      }
+      for (const [a, b] of u.lines){
+        const A = { x: a.x + ox, y: a.y + oy }, B = { x: b.x + ox, y: b.y + oy };
+        if (!cells(Math.min(A.x, B.x), Math.min(A.y, B.y), Math.max(A.x, B.x), Math.max(A.y, B.y), k => {
+          const c = grid.get(k);
+          if (!c) return;
+          for (const p of c.hives) if (near(p.x, p.y, A, B) < p.outerR + GAP / 2) return false;
+        })) return false;
+      }
+      return true;
+    };
+    const slot = k => { if (!grid.has(k)) grid.set(k, { hives: [], lines: [] }); return grid.get(k); };
+    units.forEach((u, n) => {
+      let x = 0, y = 0;
+      if (n){
+        // a group starts where the last one no bigger than it was placed:
+        // everything inside that was already found taken
+        const cls = Math.floor(u.R / 25);
+        let k = 1;
+        for (let c = 0; c <= cls; c++) if (floors[c] > k) k = floors[c];
+        for (; k < 4000000; k++){
+          const rho = 16 * Math.sqrt(k), th = k * GOLDEN;
+          const cx = rho * Math.cos(th) * ax, cy = rho * Math.sin(th) * ay;
+          if (clear(u, cx, cy)){ x = cx; y = cy; break; }
+        }
+        floors[cls] = Math.max(floors[cls] || 0, k);
+      }
+      u.hives.forEach(h => {
+        h.x += x; h.y += y;
+        const pad = h.outerR + GAP / 2;
+        cells(h.x - pad, h.y - pad, h.x + pad, h.y + pad, k => { slot(k).hives.push(h); });
+      });
+      u.lines.forEach(([a, b]) => cells(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y), k => { slot(k).lines.push([a, b]); }));
+    });
   }
   // push overlapping circles apart, half each, through a grid of cells
   function collide(P, gap){
