@@ -33,7 +33,25 @@
     // spiral out from the record that fetched it and take the first place
     // with real room; if nothing clears, the roomiest place tried
     function freeSpot(anchor, self){
-      const nearest = (x, y) => MAP.nodes.reduce((m, n) => n === self ? m : Math.min(m, Math.hypot(n.x - x, n.y - y)), Infinity);
+      // Where everything is, in 90-unit cells. A spot is free when nothing
+      // is within 90, so it only needs its own 3x3 cells, not every record:
+      // Expand all used to measure every spot against the whole map.
+      const C = 90, cells = new Map();
+      MAP.nodes.forEach(n => {
+        if (n === self || !isFinite(n.x) || !isFinite(n.y)) return;
+        const k = Math.floor(n.x / C) + "," + Math.floor(n.y / C);
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k).push(n);
+      });
+      const nearest = (x, y) => {
+        let m = Infinity;
+        const gx = Math.floor(x / C), gy = Math.floor(y / C);
+        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++){
+          const list = cells.get((gx + i) + "," + (gy + j));
+          if (list) for (const n of list){ const d = Math.hypot(n.x - x, n.y - y); if (d < m) m = d; }
+        }
+        return m;
+      };
       let best = { x: anchor.x + 100, y: anchor.y }, bestD = -1;
       for (let ring = 1; ring <= 6; ring++){
         const rad = 96 + ring * 52, steps = 9 + ring * 4;

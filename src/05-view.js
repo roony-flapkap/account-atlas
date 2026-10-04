@@ -80,6 +80,7 @@
     let MODE = "ring", GEO = { mode: "ring", hives: [], fields: [], bounds: boundsOf([]) };
     let POS = { ring: {}, tree: {} };      // wherever the reader has dragged a single record
     let HOFF = {};                         // how far the reader has dragged each hive, as an offset
+    let HPOS = {};                         // hive centres a tidy fixed (hives only); the rest are placed around them
     let SEL = null, GREW = false;
     let K = 1, TX = 0, TY = 0, camSet = false, vbW = 1, vbH = 1, labelK = null;
     let pendingCam = null;                 // a saved camera, applied at the next layout
@@ -447,7 +448,7 @@
                               .concat(MAP.nodes.filter(n => !n.hive).map(boxOf), GEO.fields || []));
     }
     function relayout(fit){
-      GEO = MODE === "tree" ? layoutTree() : layoutHives(vbW / vbH);
+      GEO = MODE === "tree" ? layoutTree() : layoutHives(vbW / vbH, { pins: HPOS });
       applyHiveOffsets();
       const ov = POS[MODE];
       MAP.nodes.forEach(n => { const p = ov[n.key]; if (p){ n.x = p.x; n.y = p.y; } });
@@ -596,7 +597,13 @@
     }
     function updateTools(){
       const undo = $("gundo");
-      if (undo) undo.disabled = !Object.keys(POS[MODE]).length && !(MODE === "ring" && Object.keys(HOFF).length) && !GREW;
+      // on hives it is the tidy, worth a press whenever there are two to arrange;
+      // in the hierarchy it undoes what was dragged
+      if (undo){
+        const tidy = MODE === "ring" && GEO.hives && GEO.hives.length >= 2;
+        undo.disabled = !tidy && !Object.keys(POS[MODE]).length && !(MODE === "ring" && Object.keys(HOFF).length) && !GREW;
+        undo.title = tidy ? "Tidy: arrange the accounts by what they share" : "Lay it out again";
+      }
       wrap.querySelectorAll("[data-lay]").forEach(b => b.setAttribute("aria-pressed", String(b.getAttribute("data-lay") === MODE)));
       paintXall();
     }
@@ -908,7 +915,17 @@
         else if (z === "png") savePng(b);
         else if (z === "names") setNames(!namesOn);
         else if (z === "full") isFull() ? exitFull() : enterFull();
-        else if (z === "relayout"){ POS[MODE] = {}; if (MODE === "ring") HOFF = {}; GREW = false; relayout(true); changed(); }
+        else if (z === "relayout"){
+          POS[MODE] = {}; GREW = false;
+          if (MODE === "ring"){
+            // the tidy: lay the hives out afresh, let them settle by what they
+            // share, and keep where they settled, so later walks place around them
+            HOFF = {}; HPOS = {};
+            const base = layoutHives(vbW / vbH);
+            HPOS = relaxHives(base.hives, hiveLinks(base.hives), vbW / vbH);
+          }
+          relayout(true); changed();
+        }
         else zoomAt(vbW / 2, vbH / 2, z === "in" ? 1.3 : 1 / 1.3);
         return;
       }
@@ -1045,12 +1062,12 @@
       // what an edit changes without moving anything: the inspector, the links' marks
       repaintInspector: () => paintInspector(),
       repaintEdges: () => layEdges(),
-      resetPositions(){ POS = { ring: {}, tree: {} }; HOFF = {}; GREW = false; SEL = null; },
+      resetPositions(){ POS = { ring: {}, tree: {} }; HOFF = {}; HPOS = {}; GREW = false; SEL = null; },
       // The arrangement a canvas saves: layout, dragged records and hives,
       // filters, and where the camera was — its centre in the map, so it
       // reopens on the same place whatever size the frame is then.
       getViewState(){
-        return { mode: MODE, pos: POS, hoff: HOFF, hide: wrap.getAttribute("data-hide") || "",
+        return { mode: MODE, pos: POS, hoff: HOFF, hpos: HPOS, hide: wrap.getAttribute("data-hide") || "",
                  cam: camSet ? { k: +K.toFixed(4), x: +((vbW / 2 - TX) / K).toFixed(1), y: +((vbH / 2 - TY) / K).toFixed(1) } : null };
       },
       setViewState(s){
@@ -1063,6 +1080,7 @@
         MODE = s.mode === "tree" ? "tree" : "ring";
         POS = { ring: pts(s.pos && s.pos.ring), tree: pts(s.pos && s.pos.tree) };
         HOFF = pts(s.hoff);
+        HPOS = pts(s.hpos);
         const hide = typeof s.hide === "string" ? s.hide.split(/\s+/).filter(k => ["contact","deal","lead","detached","stub","cross","echo"].indexOf(k) >= 0).join(" ") : "";
         wrap.setAttribute("data-hide", hide);
         SEL = null; GREW = false; camSet = false;
