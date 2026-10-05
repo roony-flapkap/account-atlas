@@ -139,21 +139,113 @@
     return out;
   }
 
+  // Which hive each company is drawn in: a hive's own company is its hive,
+  // and a company reached but not walked (a satellite) the hive holding it.
+  function companyHives(hives){
+    const at = new Map();
+    hives.forEach(h => { at.set(h.key, h.key); h.sats.forEach(s => at.set(s.node.key, h.key)); });
+    return at;
+  }
+
   // What joins two hives: the records on both. A contact on companies A and
   // B, or a deal or lead linked to both, is one unit of pull between them.
+  // A satellite counts as the hive holding it: counted by walked companies
+  // only, an account whose record was on another hive's satellite looked
+  // alone, went to the band, and its red line ran across the map.
   // Read straight off the model, so it is derived, never stored.
   function hiveLinks(hives){
-    const isHive = new Set(hives.map(h => h.key)), w = new Map();
+    const hiveOf = companyHives(hives), w = new Map();
     const add = (a, b) => {
       if (!w.has(a)) w.set(a, new Map());
       w.get(a).set(b, (w.get(a).get(b) || 0) + 1);
     };
     MAP.nodes.forEach(n => {
       if (n.kind === "company") return;
-      const cos = [...new Set(n.adj.filter(k => isHive.has(k)))];
+      const cos = [...new Set(n.adj.map(k => hiveOf.get(k)).filter(Boolean))];
       for (let i = 0; i < cos.length; i++) for (let j = 0; j < cos.length; j++) if (i !== j) add(cos[i], cos[j]);
     });
     return w;
+  }
+
+  // THE SOLAR SYSTEM (MAP-11). Every account is a sun, and its records
+  // orbit it by kind, in the order the funnel runs: contacts on the first
+  // orbit (Mercury), leads on the second (Venus), deals on the third
+  // (Earth), the companies they reach that nobody walked on the fourth
+  // (Mars), and the unattached contacts sharing its number in a loose belt
+  // beyond (the asteroid belt). An orbit nothing is on is skipped, so an
+  // account of contacts alone is one ring, as before. Each orbit is as big
+  // as its count needs, and starts beyond the names of the orbit inside it:
+  // a name runs outward along its record's spoke.
+  const ORBIT_OF = { contact: 0, lead: 1, deal: 2 };
+  const BELT_LANE = 9;                      // the belt's three lanes, this far apart
+
+  function sizeSystem(h, hiveOf){
+    h.anchors = anchorsOf(h);
+    const span = list => 16 + Math.max(...list.map(n => labelLen(n, G.ringChars))) * G.charW;
+    // Records facing one partner are seated side by side on the side facing
+    // it; a crowd too big for that side would send the lines of its far end
+    // back across its own hive, so its orbit grows to fit.
+    const crowd = list => {
+      const c = new Map();
+      list.forEach(n => farOf(n, h, hiveOf).forEach(k => c.set(k, (c.get(k) || 0) + 1)));
+      return Math.max(0, ...c.values());
+    };
+    const fit = (list, inner) => Math.max(inner, list.length * G.arc / (2 * Math.PI), crowd(list) * G.arc / (2 * G.face));
+    const kinds = [[], [], []], belt = [];
+    h.members.forEach(n => { if (n.kind === "detached") belt.push(n); else kinds[ORBIT_OF[n.kind] ?? 0].push(n); });
+    const orbit = (list, R, level, isBelt) => ({ list, R, level, belt: isBelt, gap: Math.min(2 * Math.PI / list.length, G.arc / R) });
+    h.orbits = [];
+    let edge = 0;
+    kinds.forEach((list, k) => {
+      if (!list.length) return;
+      const R = fit(list, edge ? edge + G.orbitGap : G.ringMin);
+      h.orbits.push(orbit(list, R, k + 1, false));
+      edge = R + span(list);
+    });
+    if (h.sats.length){
+      h.satR = (edge || G.ringMin) + 30;
+      edge = h.satR + 18 + Math.max(...h.sats.map(s => labelLen(s.node, G.ringChars))) * G.charW;
+    }
+    if (belt.length){
+      const R = fit(belt, edge ? edge + G.orbitGap + BELT_LANE : G.ringMin);
+      h.orbits.push(orbit(belt, R, 5, true));
+      edge = R + BELT_LANE + span(belt);
+    }
+    h.ringR = h.orbits.length ? h.orbits[0].R : G.ringMin;
+    // the company's own name is set under its marker and must fit too
+    h.outerR = Math.max(edge || G.ringMin + 30, 16 + labelLen(h.node, G.coChars) * G.charW * 0.6);
+  }
+
+  // The record a lead or a deal sits beside, on an orbit further in: what it
+  // was opened out of, if that is one; else, for a deal, a lead it is
+  // linked to; else a contact it is linked to.
+  function anchorsOf(h){
+    const on = new Map(h.members.map(n => [n.key, n])), out = new Map();
+    const rank = n => ORBIT_OF[n.kind] ?? 0;
+    h.members.forEach(n => {
+      if (n.kind !== "lead" && n.kind !== "deal") return;
+      const inner = k => { const m = k && on.get(k); return m && m.kind !== "detached" && rank(m) < rank(n) ? m : null; };
+      const linked = kind => { for (const k of n.adj){ const m = inner(k); if (m && m.kind === kind) return m; } return null; };
+      const a = inner(held(n)) || (n.kind === "deal" ? linked("lead") : null) || linked("contact");
+      if (a) out.set(n.key, a);
+    });
+    return out;
+  }
+  // The other hives a record is on (a satellite counting as its hive);
+  // with none, those of the record it sits beside, which it follows round.
+  function farOf(n, h, hiveOf){
+    const ks = [...new Set(n.adj.map(k => hiveOf.get(k)).filter(k => k && k !== h.key))];
+    if (ks.length) return ks;
+    const a = h.anchors.get(n.key);
+    return a ? farOf(a, h, hiveOf) : [];
+  }
+  // The way a record faces: toward the middle of the other hives it is on.
+  function faceOf(n, h, hiveOf, hiveAt){
+    const ks = [...new Set(n.adj.map(k => hiveOf.get(k)).filter(k => k && k !== h.key))];
+    if (!ks.length) return null;
+    const dx = ks.reduce((s, k) => s + hiveAt.get(k).x, 0) / ks.length - h.x;
+    const dy = ks.reduce((s, k) => s + hiveAt.get(k).y, 0) / ks.length - h.y;
+    return Math.hypot(dx, dy) > 1 ? Math.atan2(dy, dx) : null;
   }
 
   // EVERY COMPANY IS ITS OWN HIVE. Hives are placed in first-walk order,
@@ -168,24 +260,8 @@
     const { hives, loose, fields } = hiveModel();
     // the spiral is stretched to the frame's shape — wide on a desk, tall on a phone
     const asp = clamp(aspect || 1.6, 0.55, 2.2), ax = Math.sqrt(asp), ay = 1 / ax;
-    const isHive = new Set(hives.map(h => h.key));
-    hives.forEach(h => {
-      const m = h.members.length;
-      // Records facing one partner are seated side by side on the side
-      // facing it; a crowd too big for that side would send the lines of
-      // its far end back across its own hive, so its ring grows to fit.
-      const crowd = new Map();
-      ringFar(h, isHive).forEach(far => far.forEach(k => crowd.set(k, (crowd.get(k) || 0) + 1)));
-      h.ringR = Math.max(G.ringMin, m * G.arc / (2 * Math.PI), Math.max(0, ...crowd.values()) * G.arc / (2 * G.face));
-      const lab = m ? 16 + Math.max(...h.members.map(n => labelLen(n, G.ringChars))) * G.charW : 30;
-      h.labR = h.ringR + lab;
-      if (h.sats.length){
-        h.satR = h.labR + 30;
-        h.outerR = h.satR + 18 + Math.max(...h.sats.map(s => labelLen(s.node, G.ringChars))) * G.charW;
-      } else h.outerR = h.labR;
-      // the company's own name is set under its marker and must fit too
-      h.outerR = Math.max(h.outerR, 16 + labelLen(h.node, G.coChars) * G.charW * 0.6);
-    });
+    const hiveOf = companyHives(hives);
+    hives.forEach(h => sizeSystem(h, hiveOf));
 
     const links = hiveLinks(hives);
     packHives(hives, ax, ay, links, pins);
@@ -195,18 +271,35 @@
       const c = h.node;
       c.x = h.x; c.y = h.y; c.hive = h.key; c.parent = null; c.level = 0;
       c.room = 2 * h.outerR + G.hiveGap * 0.8;     // how wide its name may run
-      // each ring starts facing away from the middle of the map
+      // each orbit starts facing away from the middle of the map
       const a0 = i === 0 ? -Math.PI / 2 : Math.atan2(h.y, h.x);
-      const angles = ringAngles(h, hiveAt, a0);
-      h.members.forEach((n, j) => {
-        const a = angles[j];
-        n.x = h.x + h.ringR * Math.cos(a); n.y = h.y + h.ringR * Math.sin(a);
-        n.hive = h.key; n.level = 1;
-        // what it was opened out of wins, so an arrival hangs from its fetcher
-        n.parent = held(n) || h.key;
+      // Inside out. A record on another account faces it; a lead or a deal
+      // sits beside the record it came from, half a place round, so its
+      // spoke runs between that orbit's names rather than over one.
+      const at = new Map(), gapOf = new Map();
+      h.orbits.forEach(o => {
+        const want = new Map();
+        o.list.forEach((n, j) => {
+          const face = faceOf(n, h, hiveOf, hiveAt);
+          if (face != null){ want.set(j, face); return; }
+          const A = h.anchors.get(n.key);
+          if (A && at.has(A.key)) want.set(j, at.get(A.key) + gapOf.get(A.key) / 2);
+        });
+        const angles = seatOrbit(o.list.length, want, a0, o.R);
+        // the belt is loose: neighbours round it take turns at three lanes
+        const lane = new Map();
+        if (o.belt) o.list.map((n, j) => j).sort((p, q) => angles[p] - angles[q]).forEach((j, r) => lane.set(j, (r % 3) - 1));
+        o.list.forEach((n, j) => {
+          const a = angles[j], R = o.R + (lane.get(j) || 0) * BELT_LANE;
+          n.x = h.x + R * Math.cos(a); n.y = h.y + R * Math.sin(a);
+          n.hive = h.key; n.level = o.level;
+          // what it was opened out of wins, so an arrival hangs from its fetcher
+          n.parent = held(n) || h.key;
+          at.set(n.key, a); gapOf.set(n.key, o.gap);
+        });
       });
-      // Satellites stand beyond the ring's labels, in line with the record
-      // that reaches them — never on top of that record's own label.
+      // Satellites (Mars) stand beyond the names of the orbits inside, in
+      // line with the record that reaches them.
       if (h.sats.length){
         const sep = 26 / h.satR;
         const list = h.sats.map(s => {
@@ -217,7 +310,7 @@
         list.forEach(({ s, a }) => {
           const n = s.node;
           n.x = h.x + h.satR * Math.cos(a); n.y = h.y + h.satR * Math.sin(a);
-          n.hive = h.key; n.level = 2; n.parent = s.anchor;
+          n.hive = h.key; n.level = 4; n.parent = s.anchor;
         });
       }
     });
@@ -327,43 +420,21 @@
     });
   }
 
-  // The other accounts each member of a ring is also on (hive keys), by
-  // member index; a contact's own deals and leads that are on none take the
-  // contact's, so they sit beside it. Members on no other account are absent.
-  function ringFar(h, isHive){
-    const far = new Map();
-    h.members.forEach((n, j) => {
-      const ks = n.adj.filter(k => k !== h.key && isHive.has(k));
-      if (ks.length) far.set(j, ks);
-    });
-    let head = -1;
-    h.members.forEach((n, j) => {
-      if (n.kind === "contact" || n.kind === "detached") head = j;
-      else if (head >= 0 && far.has(head) && !far.has(j) && n.adj.includes(h.members[head].key)) far.set(j, far.get(head));
-    });
-    return far;
-  }
-
-  // The angle each member sits at on its ring. A record also on other
-  // accounts wants the direction of their hives. Those records are seated in
-  // runs centred on what they want, one ring spacing apart: records wanting
-  // the same way sit side by side on that side, never pushed round to the
-  // far side of a small ring, which sent their lines back across their own
-  // hive. (Runs are pooled where they would overlap, each placed where its
-  // members want it on average.) The rest keep their order, spread over the
-  // arcs left. With no such records the ring is exactly as before: member j
-  // at slot j.
-  function ringAngles(h, hiveAt, a0){
-    const m = h.members.length, TAU = 2 * Math.PI, step = TAU / Math.max(1, m);
-    const out = h.members.map((_, j) => a0 + j * step);
-    const items = [];
-    ringFar(h, hiveAt).forEach((ks, j) => {
-      const dx = ks.reduce((s, k) => s + hiveAt.get(k).x, 0) / ks.length - h.x;
-      const dy = ks.reduce((s, k) => s + hiveAt.get(k).y, 0) / ks.length - h.y;
-      if (Math.hypot(dx, dy) > 1) items.push({ j, w: (Math.atan2(dy, dx) + TAU) % TAU });
-    });
+  // The angle of each record on one orbit. Records with a way they want to
+  // face (`want`, by index) are seated in runs centred on it, one place
+  // apart: records wanting the same way sit side by side on that side,
+  // never pushed round to the far side of a small orbit, which sent their
+  // lines back across their own hive. (Runs are pooled where they would
+  // overlap, each placed where its records want it on average.) The rest
+  // keep their order, spread over the arcs left. With no wants the orbit is
+  // exactly as a ring always was: record j at slot j.
+  function seatOrbit(m, want, a0, R){
+    const TAU = 2 * Math.PI, step = TAU / Math.max(1, m);
+    const out = [];
+    for (let j = 0; j < m; j++) out.push(a0 + j * step);
+    const items = [...want.entries()].map(([j, w]) => ({ j, w: ((w % TAU) + TAU) % TAU }));
     if (!items.length) return out;
-    const gap = Math.min(step, G.arc / h.ringR);
+    const gap = Math.min(step, G.arc / R);
     items.sort((p, q) => p.w - q.w || p.j - q.j);
     // open the circle out at the widest gap between wanted directions
     let cut = 0, widest = -1;
@@ -387,7 +458,7 @@
       r.items.forEach((it, k) => { out[it.j] = r.s + k * gap; seated.add(it.j); });
       occupied.push([r.s - gap / 2, r.s + (r.items.length - 0.5) * gap]);
     });
-    const rest = h.members.map((_, j) => j).filter(j => !seated.has(j));
+    const rest = out.map((_, j) => j).filter(j => !seated.has(j));
     if (!rest.length) return out;
     // the free arcs between the runs share the rest in proportion to their length
     const free = [];

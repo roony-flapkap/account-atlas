@@ -332,8 +332,9 @@
         const my = (A.y + B.y) / 2;
         return [A, { x: A.x, y: my }, { x: B.x, y: my }, B];
       }
-      // an echo bows toward the middle of ITS OWN hive
-      const c = ed.rel === "link" && A.hive && A.hive === B.hive ? MAP.byKey[A.hive] : null;
+      // an echo along one orbit bows toward the middle of ITS OWN hive; one
+      // between orbits (a contact and its lead) runs straight, outward
+      const c = ed.rel === "link" && A.hive && A.hive === B.hive && A.level === B.level ? MAP.byKey[A.hive] : null;
       if (c && c !== A && c !== B) return [A, { x: c.x + ((A.x + B.x) / 2 - c.x) * 0.34, y: c.y + ((A.y + B.y) / 2 - c.y) * 0.34 }, B];
       return [A, B];
     }

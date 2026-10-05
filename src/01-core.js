@@ -31,6 +31,7 @@
     arc: 24,                        // ring spacing per member
     ringMin: 70,
     face: 75 * Math.PI / 180,       // a crowd facing one partner fits within this either side of it
+    orbitGap: 20,                   // between an orbit's names and the next orbit out
     hiveGap: 56,                  // clear space between two hives
     treeX: 164, treeY: 100, treeSub: 64, treeWrap: 10, blockGap: 120,
     lodK: 0.8,                      // below this zoom, record names hide (held, hovered and neighbouring ones stay)
