@@ -94,6 +94,24 @@ export async function mintSession(who, env, nowMs = Date.now()){
 
 const sessionUser = b => ({ email: b.e, name: b.n, picture: b.p, uid: b.u, expiresAt: new Date(b.x * 1000).toISOString() });
 
+// A ticket: a small claim the Worker signs and later takes back, so a step
+// that follows another (filling the HubSpot list just made, lists.js) needs
+// no row in D1. Signed like a session, with a "k" for what it is for, so
+// neither can pass for the other.
+export async function signTicket(env, kind, body, seconds, nowMs = Date.now()){
+  const head = b64u(enc.encode(JSON.stringify(Object.assign({}, body, { k: kind, x: Math.floor(nowMs / 1000) + seconds }))));
+  return head + "." + b64u(await crypto.subtle.sign("HMAC", await hmacKey(env), enc.encode(head)));
+}
+export async function readTicket(env, kind, token, nowMs = Date.now()){
+  const parts = String(token || "").split(".");
+  if (parts.length !== 2) return null;
+  let ok = false;
+  try { ok = await crypto.subtle.verify("HMAC", await hmacKey(env), unb64u(parts[1]), enc.encode(parts[0])); } catch(e){ return null; }
+  if (!ok) return null;
+  let body; try { body = json64(parts[0]); } catch(e){ return null; }
+  return body.k === kind && body.x > Math.floor(nowMs / 1000) ? body : null;
+}
+
 // Returns the signed-in user, or null for anything missing, forged or expired.
 export async function readSession(token, env, nowMs = Date.now()){
   const parts = String(token || "").split(".");
@@ -103,6 +121,7 @@ export async function readSession(token, env, nowMs = Date.now()){
   if (!ok) return null;
   let body; try { body = json64(parts[0]); } catch(e){ return null; }
   if (!(body.x > Math.floor(nowMs / 1000))) return null;
+  if (body.k) return null;                          // a ticket (signTicket), not a session
   // the domain rule is re-checked here too, so narrowing ALLOWED_DOMAIN takes effect at once
   const domain = String(env.ALLOWED_DOMAIN || "").toLowerCase();
   if (!domain || !String(body.e || "").endsWith("@" + domain)) return null;

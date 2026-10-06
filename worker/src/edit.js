@@ -1,8 +1,8 @@
-// Deleting from the map: the only writes the Atlas makes to HubSpot, and
-// only two kinds. Records are archived (HubSpot keeps them in its recycle
-// bin for 90 days), and the associations between two records are removed.
-// Nothing is ever created, edited or merged. Only the people named in
-// EDITORS (a secret: comma-separated addresses) may do either; anyone else
+// Deleting from the map: two kinds of write to HubSpot (the only others make
+// static lists, lists.js). Records are archived (HubSpot keeps them in its
+// recycle bin for 90 days), and the associations between two records are
+// removed. No record is ever created, edited or merged. Only the people named
+// in EDITORS (a secret: comma-separated addresses) may do either; anyone else
 // is answered 403, and the page shows them no delete controls.
 //
 // HubSpot first, then the copy. A record or link is marked gone in D1 only

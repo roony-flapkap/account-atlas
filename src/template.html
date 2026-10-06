@@ -946,6 +946,25 @@
   .sqlatc{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0 0}
   .sqlatc:empty{display:none}
   .sqlatcl{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+
+  /* ---------- a HubSpot list, for the editors ---------- */
+  .hl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%;border-top:1px dashed var(--rule);padding-top:8px;margin-top:2px}
+  .hlbox{margin:0 0 10px}
+  .hlbox .hl{border-top:0;padding-top:0;margin-top:0}
+  .hlk{font-size:8.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)}
+  .hlsel,.hlname{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;background:var(--void);color:var(--ink);
+    border:1px solid var(--red-dim);padding:4px 7px;outline:none;min-width:0}
+  .hlsel{max-width:180px}
+  .hlname{flex:1 1 170px}
+  /* the sidebar is narrow: the name gets a line of its own, so all of it shows */
+  .gside .hlname{flex-basis:100%}
+  /* the placeholder is the name it will get, so it is meant to be read */
+  .hlname::placeholder{color:var(--dim)}
+  .hlhint{font-size:9px;color:var(--dim);letter-spacing:.04em;flex-basis:100%;line-height:1.5}
+  .hlnote{font-size:9.5px;color:var(--amber);letter-spacing:.04em;flex-basis:100%;line-height:1.5}
+  .hlnote.bad{color:var(--alert)}
+  .hlnote:empty{display:none}
+  .hlopen{color:var(--accent);text-underline-offset:2px;white-space:nowrap}
 </style>
 <!-- the phase is stamped before the rest of the body parses, so the console
      never shows for a frame on the way to the gate -->

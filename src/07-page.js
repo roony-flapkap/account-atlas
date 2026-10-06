@@ -71,7 +71,10 @@
   function renderRoster(){
     const host = $("gsideacc");
     if (host){
-      if (!MAP.order.length) host.innerHTML = '<p class="cvnone">No account walked on this canvas yet — acquire a company to start it.</p>';
+      // for an editor: what is drawn here, of one type, as a HubSpot list (section 17)
+      const hl = hlHtml("cv");
+      const list = hl ? '<div class="hlbox"><p class="rzlede">Every record of one type on this canvas, as a static list in HubSpot.</p>' + hl + "</div>" : "";
+      if (!MAP.order.length) host.innerHTML = '<p class="cvnone">No account walked on this canvas yet — acquire a company to start it.</p>' + list;
       else {
         const rows = MAP.order.map(cid => MAP.accounts[cid]).filter(Boolean)
           .sort((a, b) => String(b.walkedAt || "").localeCompare(String(a.walkedAt || "")))
@@ -82,7 +85,7 @@
         host.innerHTML = '<p class="rzlede">' + MAP.order.length + " " + plural(MAP.order.length, "account") +
           " walked on <b>" + esc(CV.cur ? CV.cur.name : "this canvas") + "</b>. Press one to travel to it — nothing is re-read. " +
           "A walk older than a fortnight is marked; hold the company and press <b>Re-walk</b> to refresh it.</p>" +
-          '<div class="roster">' + rows + "</div>";
+          list + '<div class="roster">' + rows + "</div>";
       }
     }
     // what the canvas findings would be asked about has changed with it

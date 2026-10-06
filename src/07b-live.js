@@ -220,7 +220,7 @@
           '<b>dup_contact_pairs</b> (with a score and the evidence — cheap to read); and the views <b>company_keys</b>, <b>contact_keys</b> (cleaned and sound-alike names) ' +
           'and <b>shared_numbers</b>. The live views <b>duplicate_pairs</b> and <b>contact_duplicate_pairs</b> work the pairs out afresh, and read ~800,000 rows each time. ' +
           'One SELECT at a time, 1,000 rows at most, logged. ' +
-          'Any records in a result can be added to a canvas. ' +
+          'Any records in a result can be added to a canvas' + (CAN_EDIT ? ", or made a HubSpot list of one type" : "") + ". " +
           'Canvases are not in it. Keys read <b>0-2/…</b> company · <b>0-1/…</b> contact · <b>0-3/…</b> deal · <b>0-136/…</b> lead. Ctrl+Enter runs.</p>' +
         '<div class="sqlex" id="sqlex"></div>' +
         '<textarea id="sqlq" rows="7" spellcheck="false" autocomplete="off" aria-label="SQL query"></textarea>' +
@@ -388,11 +388,12 @@
     try {
       const r = await api("/api/sql", { sql });
       SQ.last = r; SQ.lastSql = sql;
-      // any records in the result can go onto a canvas, as the companies they are on
+      // any records in the result can go onto a canvas, as the companies they are on,
+      // and, for an editor, into a HubSpot list (section 17)
       const found = keysIn(r.rows).length;
       $("sqlatc").innerHTML = found
         ? '<span class="sqlatcl">' + fmt(found) + " " + plural(found, "record") + " in this result</span>" +
-          '<input id="sqlname" class="sqlname" type="text" maxlength="60" placeholder="NAME THIS LIST" aria-label="Name this list">' + atcHtml("sql")
+          '<input id="sqlname" class="sqlname" type="text" maxlength="60" placeholder="NAME THIS LIST" aria-label="Name this list">' + atcHtml("sql") + hlHtml("sql")
         : "";
       stat.textContent = fmt(r.rows.length) + " " + plural(r.rows.length, "row") + (r.truncated ? " (the first 1,000)" : "") + " · " + fmt(r.ms) + " ms · " +
                          fmt(r.rowsRead) + " rows read · today " + fmt(r.readToday) + " of " + fmt(r.readBudget);

@@ -58,11 +58,16 @@ export function checkSql(sql){
   return sql;
 }
 
-export async function runSql(env, user, sql){
-  const q = checkSql(sql);
+async function allowance(env){
   const budget = Number(env.SQL_READ_BUDGET) || 1000000;
   const used = (await usageToday(env)).sql_reads;
   if (used >= budget) throw new SqlError("budget", "today's SQL read allowance (" + budget.toLocaleString("en-US") + " rows) is spent; it resets at 00:00 UTC");
+  return { budget, used };
+}
+
+export async function runSql(env, user, sql){
+  const q = checkSql(sql);
+  const { budget, used } = await allowance(env);
   const t0 = Date.now();
   let r;
   try { r = await env.GRAPH.prepare("SELECT * FROM (" + q + "\n) LIMIT " + (MAX_ROWS + 1)).all(); }
@@ -78,4 +83,44 @@ export async function runSql(env, user, sql){
   await env.APP.prepare("INSERT INTO audit (at, email, action, detail) VALUES (?1, ?2, 'sql', ?3)")
     .bind(new Date().toISOString(), user.email, JSON.stringify({ sql: q.slice(0, 2000), rows: Math.min(rows.length, MAX_ROWS), read: rowsRead })).run();
   return { columns, rows: rows.slice(0, MAX_ROWS), truncated, ms: Date.now() - t0, rowsRead, readToday: used + rowsRead, readBudget: budget };
+}
+
+// Every record of one type in a query's result, however many rows: for a
+// HubSpot list (lists.js). The query runs in full, with no row limit, and D1
+// itself picks the keys out of the named columns — any number to a cell,
+// split on spaces and commas as the page's keysIn reads them — and answers
+// with their ids joined in one string, so the Worker does nothing per row
+// (the free plan allows it 10 ms of CPU). A cell becomes a JSON array of its
+// words for json_each: backslashes and quotes escaped, tabs, newlines and
+// commas made spaces; a cell that still is not valid JSON is passed over.
+const KEY_TYPES = ["0-1", "0-2", "0-3", "0-136"];
+const WORDS = String.raw`'["' || replace(replace(replace(replace(replace(replace(replace(v, '\', '\\'), '"', '\"'), char(9), ' '), char(10), ' '), char(13), ' '), ',', ' '), ' ', '","') || '"]'`;
+export async function sqlKeys(env, user, sql, columns, type){
+  const q = checkSql(sql);
+  if (KEY_TYPES.indexOf(type) < 0) throw new SqlError("bad_input", "a record type is 0-1, 0-2, 0-3 or 0-136");
+  const cols = [...new Set((Array.isArray(columns) ? columns : []).map(String).filter(Boolean))];
+  if (!cols.length || cols.length > 64) throw new SqlError("bad_input", "name the result's columns (1 to 64)");
+  const { budget, used } = await allowance(env);
+  // a column is named in backticks, its own doubled, so it cannot end the name
+  // early; SQLite reads an unknown "name" in double quotes as a string, but
+  // an unknown `name` is an error, so a wrong column is said, not missed
+  const cell = cols.map(c => "coalesce(CAST(`" + c.replace(/`/g, "``") + "` AS TEXT), '')").join(" || ' ' || ");
+  const pre = type + "/", from = pre.length + 1;
+  const stmt =
+    "SELECT count(*) AS n, group_concat(id) AS ids FROM (" +
+      "SELECT DISTINCT substr(j.value, " + from + ") AS id " +
+      "FROM (SELECT " + WORDS + " AS arr FROM (SELECT " + cell + " AS v FROM (" + q + "\n)) WHERE v GLOB '*0-[0-9]*/[0-9]*') r, " +
+        "json_each(CASE WHEN json_valid(r.arr) THEN r.arr ELSE '[]' END) j " +
+      "WHERE j.value GLOB '" + pre + "[0-9]*' AND substr(j.value, " + from + ") NOT GLOB '*[^0-9]*' AND length(j.value) <= " + (pre.length + 20) + ")";
+  const t0 = Date.now();
+  let r;
+  try { r = await env.GRAPH.prepare(stmt).all(); }
+  catch(e){ throw new SqlError("sql_error", String(e && e.message || e).replace(/^D1_ERROR:\s*/, "").slice(0, 400)); }
+  const row = (r.results || [])[0] || {};
+  const count = Number(row.n) || 0;
+  const rowsRead = Number(r.meta && r.meta.rows_read) || 0;
+  await addUsage(env, "sql_reads", rowsRead);
+  await env.APP.prepare("INSERT INTO audit (at, email, action, detail) VALUES (?1, ?2, 'sql', ?3)")
+    .bind(new Date().toISOString(), user.email, JSON.stringify({ sql: q.slice(0, 2000), for: "list", type, ids: count, read: rowsRead })).run();
+  return { type, count, ids: count ? String(row.ids) : "", ms: Date.now() - t0, rowsRead, readToday: used + rowsRead, readBudget: budget };
 }

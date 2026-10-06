@@ -13,7 +13,7 @@ view=open(A+"05-view.js").read().replace("    /*@@EXPAND@@*/", open(A+"06-expand
 parts=[open(A+"00-platform.js").read(), open(A+"01-core.js").read(), open(A+"02-model.js").read(), open(A+"02b-canvas.js").read(),
        open(A+"03-walk.js").read(), open(A+"03b-segments.js").read(), open(A+"04-layout.js").read(), view,
        open(A+"07-page.js").read(), open(A+"07b-live.js").read(), open(A+"07c-findings.js").read(), open(A+"07d-edit.js").read(),
-       open(A+"08-boot.js").read()]
+       open(A+"07e-lists.js").read(), open(A+"08-boot.js").read()]
 open("build/atlas.js","w").write("\n".join(parts))
 PY
 node --check build/atlas.js

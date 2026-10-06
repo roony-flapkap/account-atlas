@@ -11,6 +11,7 @@ import { walkAuto } from "./walk.js";
 import { resolve, expand, recordsFresh, changesSince, searchSegments, segmentMembers, segmentMesh, tombstones, companiesOf } from "./api.js";
 import { listFindings, runFinding, runCanvasFindings } from "./findings.js";
 import { canEdit, deletePlan, deleteRecords, unlinkPairs, unlinkAll } from "./edit.js";
+import { listKeys, createList, addToList } from "./lists.js";
 import { handleHook } from "./hooks.js";
 import { tick, syncStatus } from "./sync.js";
 import { WS_PROTOCOL } from "./hub.js";
@@ -142,6 +143,10 @@ async function route(req, env, ctx){
   if (p === "/api/edit/delete" && M === "POST"){ const b = await readJson(req, 60000); return json(await deleteRecords(env, user, b.keys)); }
   if (p === "/api/edit/unlink" && M === "POST"){ const b = await readJson(req, 80000); return json(await unlinkPairs(env, user, b.pairs)); }
   if (p === "/api/edit/unlink-all" && M === "POST"){ const b = await readJson(req, 2000); return json(await unlinkAll(env, user, b.key)); }
+  // a static list in HubSpot from what the map, a finding or a query shows: the editors only (lists.js)
+  if (p === "/api/lists/keys" && M === "POST") return json(await listKeys(env, user, await readJson(req, 30000)));
+  if (p === "/api/lists/create" && M === "POST") return json(await createList(env, user, await readJson(req, 30000)));
+  if (p === "/api/lists/add" && M === "POST") return json(await addToList(env, user, await readJson(req, 300000)));
   return failure(404, "not_found", "no such route");
 }
 

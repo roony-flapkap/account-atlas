@@ -107,7 +107,7 @@
           (f.waiting.length ? '<p class="fdw">Still being copied: ' + esc(f.waiting.join(", ")) + ". This shows what is there so far.</p>" : "") +
           '<div class="fdrows">' + rowsHtml(f) + "</div>" +
           (d ? '<p class="fdmeta">' + (d.cached ? "as of " + esc(ago(d.at)) : "just now") + (d.rowsRead ? " · " + fmt(d.rowsRead) + " rows read" : "") + (d.note ? " · " + esc(d.note) : "") + "</p>" : "") +
-          '<div class="fdacts">' + (d && d.rows.length ? atcHtml("f:" + f.id) : "") +
+          '<div class="fdacts">' + (d && d.rows.length ? atcHtml("f:" + f.id) + hlHtml("f:" + f.id) : "") +
             '<button type="button" class="act" data-fdagain="' + esc(f.id) + '">Ask again</button>' +
             '<button type="button" class="act" data-fdsql="' + esc(f.id) + '">Open in SQL</button></div>' +
         "</div>" : "") + "</section>";
@@ -188,7 +188,7 @@
             '<span class="fdn">' + esc(fmt(f.count) + (f.more ? "+" : "")) + "</span></button>" +
           (open ? '<div class="fdb"><p class="fdl">' + esc(f.blurb) + "</p>" +
             '<div class="fdrows">' + cvRowsHtml(f) + "</div>" +
-            '<div class="fdacts">' + (f.rows.length ? atcHtml("c:" + f.id) : "") + "</div></div>" : "") + "</section>";
+            '<div class="fdacts">' + (f.rows.length ? atcHtml("c:" + f.id) + hlHtml("c:" + f.id) : "") + "</div></div>" : "") + "</section>";
       });
     }
     host.innerHTML = html;

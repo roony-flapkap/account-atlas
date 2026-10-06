@@ -1,20 +1,27 @@
 // HubSpot's REST API, with the private app's token. Every call takes a
 // token from HubSpotGate first, so all Workers together stay under the
 // portal's limits. Reads only — GET and the read-by-POST endpoints (batch
-// read, search) — except for the two deletes in WRITE_POSTS, which only a
-// client made with { writes: true } can send (edit.js, for the editors):
-// archiving records, and removing the associations between two records.
-// Nothing is ever created, edited or merged.
+// read, search) — except for the writes in WRITES, which only a client made
+// with { writes: true } can send, for the editors: archiving records and
+// removing the associations between two records (edit.js), and making a
+// static list and adding records to it (lists.js). No record is ever
+// created, edited or merged.
 
 const BASE = "https://api.hubapi.com";
 // the REST paths accept object type ids, which is what record keys carry
 export const T = { contact: "0-1", company: "0-2", deal: "0-3", lead: "0-136" };
 export const KIND_OF = { "0-1": "contact", "0-2": "company", "0-3": "deal", "0-136": "lead" };
 const READ_POSTS = [/\/batch\/read$/, /\/search$/];
-const WRITE_POSTS = [/^\/crm\/v3\/objects\/0-\d+\/batch\/archive$/, /^\/crm\/v4\/associations\/0-\d+\/0-\d+\/batch\/archive$/];
+const WRITES = [
+  ["POST", /^\/crm\/v3\/objects\/0-\d+\/batch\/archive$/],
+  ["POST", /^\/crm\/v4\/associations\/0-\d+\/0-\d+\/batch\/archive$/],
+  ["POST", /^\/crm\/v3\/lists$/],
+  ["PUT", /^\/crm\/v3\/lists\/\d+\/memberships\/add$/]
+];
 
+// sub: HubSpot's subCategory, where it gives one (e.g. ILS.DUPLICATE_LIST_NAMES)
 export class HubSpotError extends Error {
-  constructor(status, code, message){ super(message || code); this.status = status; this.code = code; }
+  constructor(status, code, message, sub){ super(message || code); this.status = status; this.code = code; this.sub = sub || null; }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -60,11 +67,11 @@ export function hubspotClient(env, opts = {}){
       throw new HubSpotError(0, "not_read_only", "refusing a HubSpot call that could write: " + method + " " + path);
     return send(method, path, body, kind, reserved);
   }
-  // the deletes, and only for a client made to send them
-  async function write(path, body){
-    if (!opts.writes || !WRITE_POSTS.some(re => re.test(path)))
-      throw new HubSpotError(0, "not_allowed", "refusing a HubSpot write: POST " + path);
-    return send("POST", path, body, "general", false);
+  // the writes in WRITES, and only for a client made to send them
+  async function write(path, body, method = "POST"){
+    if (!opts.writes || !WRITES.some(([m, re]) => m === method && re.test(path)))
+      throw new HubSpotError(0, "not_allowed", "refusing a HubSpot write: " + method + " " + path);
+    return send(method, path, body, "general", false);
   }
 
   async function send(method, path, body, kind, reserved){
@@ -96,9 +103,9 @@ export function hubspotClient(env, opts = {}){
         continue;
       }
       if (res.status >= 500 && attempt < 1){ stats.retries++; await sleep(1000); continue; }
-      let msg = ""; try { const j = await res.json(); msg = j.message || j.category || ""; } catch(e){}
+      let msg = "", sub = null; try { const j = await res.json(); msg = j.message || j.category || ""; sub = j.subCategory || null; } catch(e){}
       throw new HubSpotError(res.status, res.status === 429 ? "rate_limited" : res.status === 401 ? "bad_token"
-        : res.status === 403 ? "missing_scope" : res.status === 404 ? "not_found" : "hubspot_error", msg || ("HubSpot answered " + res.status));
+        : res.status === 403 ? "missing_scope" : res.status === 404 ? "not_found" : "hubspot_error", msg || ("HubSpot answered " + res.status), sub);
     }
   }
 
@@ -173,5 +180,12 @@ export function hubspotClient(env, opts = {}){
     for (const [a, list] of by) for (const p of chunk(list, 100)) inputs.push({ from: { id: a }, to: p.map(id => ({ id })) });
     for (const p of chunk(inputs, 100)) await write("/crm/v4/associations/" + from + "/" + to + "/batch/archive", { inputs: p });
   }
-  return Object.assign(client, { archive, unlink });
+  // A static list, empty: HubSpot answers { list: { listId, … } }. A name
+  // already taken is refused (400, subCategory ILS.DUPLICATE_LIST_NAMES).
+  const createList = (name, type) => write("/crm/v3/lists", { name, objectTypeId: type, processingType: "MANUAL" });
+  // Records into a static list by id. HubSpot answers { recordsIdsAdded (sic),
+  // recordIdsMissing }, leaving out whichever is empty; one call took 100,000
+  // ids when tried, so the caller's size is what limits it.
+  const addToList = (listId, ids) => write("/crm/v3/lists/" + listId + "/memberships/add", ids.map(String), "PUT");
+  return Object.assign(client, { archive, unlink, createList, addToList });
 }
